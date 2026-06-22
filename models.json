@@ -1,0 +1,17 @@
+[
+  {
+    "id": "nvidia/personaplex-7b-v1",
+    "name": "PersonaPlex (Original)",
+    "description": "NVIDIA base full-duplex speech-to-speech model."
+  },
+  {
+    "id": "kyutai/personaplex-rl-seamless",
+    "name": "PersonaPlex RL Seamless",
+    "description": "Kyutai RL fine-tune for smoother turn-taking and backchanneling. Non-commercial (CC BY-NC 4.0) — internal/demo use only."
+  },
+  {
+    "id": "demegire/personaplex-finetune-pharma",
+    "name": "PersonaPlex Pharma",
+    "description": "Pharma patient-support / medication-adherence fine-tune of the base model."
+  }
+]
