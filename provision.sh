@@ -31,6 +31,8 @@ set -euo pipefail
 
 PORT="${MOSHI_PORT:-8998}"
 REPO_DIR="${REPO_DIR:-/workspace/personaplex}"
+APP_DIR="${APP_DIR:-/workspace/Roscommon-Full-Duplex-Test}"
+APP_REPO="${APP_REPO:-github.com/roscommonsystems/Roscommon-Full-Duplex-Test}"
 VENV="${VENV:-/venv/main}"
 export HF_HOME="${HF_HOME:-/workspace/.hf_home}"
 
@@ -70,6 +72,27 @@ else
   echo "Repo already present at $REPO_DIR — skipping clone."
 fi
 
+# --- Our app repo (private) ------------------------------------------------
+# Needed for serve.py, supervisor/, models.json and the client. When running
+# this script manually you've usually already cloned it (then this is a no-op).
+# For hands-free vast.ai on-start, set GITHUB_TOKEN so the private repo can be
+# cloned non-interactively.
+log "Fetching the Roscommon app repo ($APP_DIR)"
+if [ ! -d "$APP_DIR/.git" ]; then
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    git clone --depth 1 "https://${GITHUB_TOKEN}@${APP_REPO}" "$APP_DIR"
+  else
+    echo "ERROR: $APP_DIR is not present and GITHUB_TOKEN is not set."
+    echo "The app repo is private. Either:"
+    echo "  - clone it yourself to $APP_DIR first, then re-run; or"
+    echo "  - set GITHUB_TOKEN=ghp_xxxxxxxx (a token with repo read access) and re-run."
+    exit 1
+  fi
+else
+  echo "App repo already present at $APP_DIR — pulling latest."
+  git -C "$APP_DIR" pull --ff-only || echo "(pull skipped — local changes or detached HEAD)"
+fi
+
 # --- Blackwell-safe install ------------------------------------------------
 # moshi pins torch>=2.2,<2.5 (a CUDA 12.1 build) which has NO kernels for
 # Blackwell GPUs (RTX 5090, sm_120) and fails at runtime with
@@ -90,8 +113,18 @@ uv pip install \
   'sphn>=0.1.4,<0.2' \
   'aiohttp>=3.10.5,<3.11'
 
-log "Installing supervisor dependencies"
-pip install aiohttp
+# aiohttp (the supervisor's only extra runtime dep) is already installed above
+# in the moshi deps block (pinned >=3.10.5,<3.11) — no separate install needed.
+
+log "Installing Node.js (to build the web client)"
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+fi
+echo "node $(node --version) / npm $(npm --version)"
+
+log "Building the web client ($APP_DIR/client)"
+( cd "$APP_DIR/client" && npm install && npm run build )
 
 log "Sanity check — torch sees the GPU"
 python - <<'PY'
@@ -118,9 +151,13 @@ tmux new-session -d -s moshi 'bash /workspace/run_moshi.sh > /workspace/moshi.lo
 
 log "Waiting for model to load (first run downloads ~16GB; up to ~10 min)"
 ready=0
-for _ in $(seq 1 60); do
-  if grep -q "Pre-loading" /workspace/moshi.log 2>/dev/null; then
+for _ in $(seq 1 90); do
+  if grep -q "Model ready:" /workspace/moshi.log 2>/dev/null; then
     ready=1; break
+  fi
+  if grep -q "Model failed to load" /workspace/moshi.log 2>/dev/null; then
+    echo "ERROR: model failed to load — see /workspace/moshi.log"
+    break
   fi
   sleep 10
 done

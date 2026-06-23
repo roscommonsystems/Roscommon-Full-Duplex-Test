@@ -80,6 +80,10 @@ def main():
     async def _boot(app):
         # Pre-load the default model before accepting conversations.
         await child.switch(args.hf_repo)
+        if child.state == "ready":
+            print(f"Model ready: {registry.display_name(args.hf_repo)}", flush=True)
+        else:
+            print(f"Model failed to load: {child.error}", flush=True)
     async def _shutdown(app):
         await child.aclose()
     app.on_startup.append(_boot)
