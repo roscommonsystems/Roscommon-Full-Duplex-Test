@@ -5,7 +5,7 @@ import aiohttp
 class ChildManager:
     """Owns the moshi.server child subprocess and its load state."""
 
-    def __init__(self, command_builder, port=8999, ready_timeout=180.0):
+    def __init__(self, command_builder, port=8999, ready_timeout=900.0):
         self._build = command_builder
         self.port = port
         self.ready_timeout = ready_timeout
@@ -23,18 +23,23 @@ class ChildManager:
         return self._session
 
     async def _wait_ready(self):
+        # moshi.server only binds its HTTP port after the model is fully loaded,
+        # so ANY HTTP response from the child means it's ready. We deliberately do
+        # NOT probe the /api/chat websocket: moshi requires query params there and
+        # returns 500 (KeyError) on a bare connect, which is not a readiness signal.
         session = await self._ensure_session()
-        url = f"ws://127.0.0.1:{self.port}/api/chat"
+        url = f"http://127.0.0.1:{self.port}/"
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.ready_timeout
         while loop.time() < deadline:
             if self._proc and self._proc.returncode is not None:
                 raise RuntimeError(f"child exited early (code {self._proc.returncode})")
             try:
-                async with session.ws_connect(url, timeout=5) as ws:
-                    msg = await asyncio.wait_for(ws.receive(), timeout=5)
-                    if msg.type in (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY):
-                        return
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=False
+                ) as resp:
+                    await resp.read()
+                    return  # any HTTP response = server is up and serving
             except Exception:
                 await asyncio.sleep(0.5)
         raise TimeoutError("child did not become ready in time")
