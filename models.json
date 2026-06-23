@@ -12,6 +12,7 @@
   {
     "id": "demegire/personaplex-finetune-pharma",
     "name": "PersonaPlex Pharma",
-    "description": "Pharma patient-support / medication-adherence fine-tune of the base model."
+    "description": "Pharma patient-support / medication-adherence fine-tune of the base model.",
+    "needs_shared_voices": true
   }
 ]

@@ -20,6 +20,10 @@ class ModelRegistry:
     def has(self, repo):
         return repo in self._by_id
 
+    def get(self, repo):
+        """Return the full model entry dict for a repo id, or None."""
+        return self._by_id.get(repo)
+
     def display_name(self, repo):
         entry = self._by_id.get(repo)
         if entry and entry.get("name"):

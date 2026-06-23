@@ -26,6 +26,12 @@ def test_display_name_and_fallbacks():
     assert reg.display_name("does/not-exist") == "does/not-exist"  # unknown -> id
 
 
+def test_get_returns_entry_or_none():
+    reg = ModelRegistry(MODELS)
+    assert reg.get("nvidia/personaplex-7b-v1")["name"] == "PersonaPlex (Original)"
+    assert reg.get("does/not-exist") is None
+
+
 def test_from_file(tmp_path):
     p = tmp_path / "models.json"
     p.write_text(json.dumps(MODELS), encoding="utf-8")

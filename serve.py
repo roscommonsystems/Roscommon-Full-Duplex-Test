@@ -7,6 +7,7 @@ to it. Selecting a model in the UI restarts the child with a new --hf-repo.
 """
 import argparse
 import functools
+import glob
 import os
 import ssl
 import subprocess
@@ -23,11 +24,29 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = "nvidia/personaplex-7b-v1"
 
 
-def build_moshi_cmd(repo, port, cpu_offload=False):
+def shared_voices_dir():
+    """Path to the base model's extracted voice prompts (downloaded when the
+    base model loads). Fine-tunes that ship no voices.tgz of their own borrow
+    these. Returns None if not present yet."""
+    hf_home = os.environ.get("HF_HOME", "/workspace/.hf_home")
+    pattern = os.path.join(
+        hf_home, "hub", "models--nvidia--personaplex-7b-v1", "snapshots", "*", "voices"
+    )
+    matches = sorted(glob.glob(pattern))
+    return matches[-1] if matches else None
+
+
+def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
     cmd = [sys.executable, "-m", "moshi.server",
            "--host", "127.0.0.1", "--port", str(port), "--hf-repo", repo]
     if cpu_offload:
         cmd.append("--cpu-offload")
+    # Some fine-tunes (e.g. pharma) have no voices.tgz; lend them the base voices.
+    entry = registry.get(repo) if registry else None
+    if entry and entry.get("needs_shared_voices"):
+        vd = shared_voices_dir()
+        if vd:
+            cmd += ["--voice-prompt-dir", vd]
     return cmd
 
 
@@ -73,7 +92,7 @@ def main():
     if not registry.has(args.hf_repo):
         sys.exit(f"ERROR: --hf-repo {args.hf_repo} is not in models.json")
 
-    builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload)
+    builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload, registry=registry)
     child = ChildManager(builder, port=args.child_port)
     app = create_app(registry, child, static_dir=args.static)
 
