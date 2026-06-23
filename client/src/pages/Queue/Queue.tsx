@@ -7,6 +7,7 @@ import { Button } from "../../components/Button/Button";
 import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
+import { useModels, ModelInfo } from "./hooks/useModels";
 
 // Voice presets with human-readable descriptions.
 // "Natural" voices are tuned for warm, conversational delivery; "Variety"
@@ -59,6 +60,10 @@ interface HomepageProps {
   setTextPrompt: (value: string) => void;
   voicePrompt: string;
   setVoicePrompt: (value: string) => void;
+  models: ModelInfo[];
+  selectedRepo: string;
+  setSelectedRepo: (value: string) => void;
+  loadedName: string | null;
 }
 
 const Homepage = ({
@@ -68,14 +73,11 @@ const Homepage = ({
   setTextPrompt,
   voicePrompt,
   setVoicePrompt,
+  models,
+  selectedRepo,
+  setSelectedRepo,
+  loadedName,
 }: HomepageProps) => {
-  const [modelName, setModelName] = useState<string>("");
-  useEffect(() => {
-    fetch("./config.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.modelName) setModelName(d.modelName); })
-      .catch(() => {});
-  }, []);
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
       <div className="mb-6">
@@ -83,9 +85,9 @@ const Homepage = ({
         <p className="text-sm text-gray-600 mt-2">
           Full duplex conversational AI with text and voice control.
         </p>
-        {modelName && (
+        {loadedName && (
           <p className="text-xs text-gray-500 mt-1">
-            Model: <span className="font-medium">{modelName}</span>
+            Loaded: <span className="font-medium">{loadedName}</span>
           </p>
         )}
       </div>
@@ -124,6 +126,22 @@ const Homepage = ({
         </div>
 
         <div className="w-full">
+          <label htmlFor="model-select" className="block text-left text-base font-medium text-gray-700 mb-2">
+            Model:
+          </label>
+          <select
+            id="model-select"
+            value={selectedRepo}
+            onChange={(e) => setSelectedRepo(e.target.value)}
+            className="w-full p-3 bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="w-full">
           <label htmlFor="voice-prompt" className="block text-left text-base font-medium text-gray-700 mb-2">
             Voice:
           </label>
@@ -140,14 +158,14 @@ const Homepage = ({
               </option>
             ))}
           </select>
-      </div>
+        </div>
 
         {showMicrophoneAccessMessage && (
           <p className="text-center text-red-500">Please enable your microphone before proceeding</p>
         )}
-        
+
         <Button onClick={async () => await startConnection()}>Connect</Button>
-    </div>
+      </div>
     </div>
   );
 }
@@ -159,6 +177,11 @@ export const Queue:FC = () => {
   const [hasMicrophoneAccess, setHasMicrophoneAccess] = useState<boolean>(false);
   const [showMicrophoneAccessMessage, setShowMicrophoneAccessMessage] = useState<boolean>(false);
   const modelParams = useModelParams();
+  const { models, status } = useModels();
+  const [selectedRepo, setSelectedRepo] = useState<string>("");
+  useEffect(() => {
+    if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
+  }, [status, selectedRepo]);
 
   const audioContext = useRef<AudioContext | null>(null);
   const worklet = useRef<AudioWorkletNode | null>(null);
@@ -236,6 +259,10 @@ export const Queue:FC = () => {
           setTextPrompt={modelParams.setTextPrompt}
           voicePrompt={modelParams.voicePrompt}
           setVoicePrompt={modelParams.setVoicePrompt}
+          models={models}
+          selectedRepo={selectedRepo}
+          setSelectedRepo={setSelectedRepo}
+          loadedName={status?.display_name ?? null}
         />
       )}
     </>
