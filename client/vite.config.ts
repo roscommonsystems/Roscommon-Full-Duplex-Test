@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { ProxyOptions, defineConfig, loadEnv } from "vite";
 import topLevelAwait from "vite-plugin-top-level-await";
 
@@ -9,13 +10,15 @@ export default defineConfig(({mode}) => {
       changeOrigin: true,
     },
   } : {};
+  // Only enable HTTPS when both cert files are present. On localhost, plain HTTP
+  // is still a secure context so mic/getUserMedia works without certs.
+  const httpsConf = existsSync("./cert.pem") && existsSync("./key.pem")
+    ? { cert: "./cert.pem", key: "./key.pem" }
+    : undefined;
   return {
     server: {
       host: "0.0.0.0",
-      https: {
-        cert: "./cert.pem",
-        key: "./key.pem",
-      },
+      https: httpsConf,
       proxy:{
         ...proxyConf,
       }
