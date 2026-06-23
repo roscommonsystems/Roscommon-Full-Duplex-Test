@@ -15,7 +15,7 @@ class ChildManager:
         self._proc = None
         self._lock = asyncio.Lock()
         self._session = None
-        self._bg = None
+        self._bg_tasks = set()
 
     async def _ensure_session(self):
         if self._session is None or self._session.closed:
@@ -25,7 +25,7 @@ class ChildManager:
     async def _wait_ready(self):
         session = await self._ensure_session()
         url = f"ws://127.0.0.1:{self.port}/api/chat"
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + self.ready_timeout
         while loop.time() < deadline:
             if self._proc and self._proc.returncode is not None:
@@ -76,9 +76,13 @@ class ChildManager:
 
     def request_switch(self, repo):
         self.state = "loading"
-        self._bg = asyncio.ensure_future(self.switch(repo))
+        task = asyncio.ensure_future(self.switch(repo))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def aclose(self):
+        for task in list(self._bg_tasks):
+            task.cancel()
         await self.stop()
         if self._session and not self._session.closed:
             await self._session.close()

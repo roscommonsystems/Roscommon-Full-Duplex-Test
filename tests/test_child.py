@@ -64,3 +64,18 @@ async def test_failed_start_sets_error():
         assert mgr.error
     finally:
         await mgr.aclose()
+
+
+async def test_request_switch_sets_loading_then_ready():
+    mgr = ChildManager(builder_ok(), port=8995, ready_timeout=15)
+    try:
+        mgr.request_switch("repo-a")
+        assert mgr.state == "loading"  # set synchronously, before the task runs
+        for _ in range(60):
+            if mgr.state != "loading":
+                break
+            await asyncio.sleep(0.5)
+        assert mgr.state == "ready"
+        assert mgr.current_repo == "repo-a"
+    finally:
+        await mgr.aclose()
