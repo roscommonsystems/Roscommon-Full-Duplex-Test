@@ -73,6 +73,8 @@ async def _proxy_ws(request):
 
 async def handle_proxy(request):
     child = request.app["_child"]
+    if getattr(child, "state", "ready") != "ready":
+        return web.json_response({"error": "model not ready"}, status=503)
     if request.headers.get("Upgrade", "").lower() == "websocket":
         return await _proxy_ws(request)
     session = request.app["_client_session"]

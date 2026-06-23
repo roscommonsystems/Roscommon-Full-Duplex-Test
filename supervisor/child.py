@@ -83,6 +83,8 @@ class ChildManager:
     async def aclose(self):
         for task in list(self._bg_tasks):
             task.cancel()
+        if self._bg_tasks:
+            await asyncio.gather(*self._bg_tasks, return_exceptions=True)
         await self.stop()
         if self._session and not self._session.closed:
             await self._session.close()

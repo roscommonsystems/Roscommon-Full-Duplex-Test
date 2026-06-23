@@ -86,3 +86,22 @@ async def test_static_index_fallback(aiohttp_client, tmp_path):
     resp = await client.get("/some/spa/route")
     assert resp.status == 200
     assert "<h1>app</h1>" in await resp.text()
+
+
+async def test_proxy_http_503_when_not_ready(aiohttp_client, backend):
+    child = FakeChild(backend.port)
+    child.state = "loading"
+    app = create_app(ModelRegistry([{"id": "repo-a", "name": "A"}]), child)
+    client = await aiohttp_client(app)
+    resp = await client.get("/api/ping")
+    assert resp.status == 503
+
+
+async def test_proxy_ws_rejected_when_not_ready(aiohttp_client, backend):
+    import aiohttp
+    child = FakeChild(backend.port)
+    child.state = "loading"
+    app = create_app(ModelRegistry([{"id": "repo-a", "name": "A"}]), child)
+    client = await aiohttp_client(app)
+    with pytest.raises(aiohttp.WSServerHandshakeError):
+        await client.ws_connect("/api/chat")
