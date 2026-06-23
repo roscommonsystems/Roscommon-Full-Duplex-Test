@@ -8,6 +8,7 @@ import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 import { useModels, ModelInfo } from "./hooks/useModels";
+import { useTeardown } from "./hooks/useTeardown";
 
 // Voice presets with human-readable descriptions.
 // "Natural" voices are tuned for warm, conversational delivery; "Variety"
@@ -65,6 +66,9 @@ interface HomepageProps {
   setSelectedRepo: (value: string) => void;
   loadedName: string | null;
   switchError: string | null;
+  teardownAvailable: boolean;
+  onTeardown: () => void;
+  teardownError: string | null;
 }
 
 const Homepage = ({
@@ -79,6 +83,9 @@ const Homepage = ({
   setSelectedRepo,
   loadedName,
   switchError,
+  teardownAvailable,
+  onTeardown,
+  teardownError,
 }: HomepageProps) => {
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
@@ -169,6 +176,21 @@ const Homepage = ({
         {switchError && <p className="text-center text-red-500">{switchError}</p>}
 
         <Button onClick={async () => await startConnection()}>Connect</Button>
+
+        {teardownAvailable && (
+          <div className="mt-10 flex flex-col items-center">
+            {teardownError && (
+              <p className="text-center text-red-500 mb-2 text-sm">{teardownError}</p>
+            )}
+            <button
+              type="button"
+              onClick={onTeardown}
+              className="px-3 py-1 text-xs text-gray-400 hover:text-red-600 underline focus:outline-none"
+            >
+              Shut down instance
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -185,9 +207,20 @@ export const Queue:FC = () => {
   const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const { available: teardownAvailable, teardown } = useTeardown();
+  const [destroyed, setDestroyed] = useState(false);
+  const [teardownError, setTeardownError] = useState<string | null>(null);
   useEffect(() => {
     if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
   }, [status, selectedRepo]);
+
+  const handleTeardown = useCallback(async () => {
+    if (!window.confirm("Destroy this instance? This stops billing and ends the demo.")) return;
+    setTeardownError(null);
+    const res = await teardown();
+    if (res.ok) setDestroyed(true);
+    else setTeardownError(res.error || "Shutdown failed.");
+  }, [teardown]);
 
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -298,6 +331,15 @@ export const Queue:FC = () => {
     if (ok) await startConnection();
   }, [ensureModelLoaded, startConnection]);
 
+  if (destroyed) {
+    return (
+      <div className="text-center h-screen flex flex-col items-center justify-center gap-3">
+        <h1 className="text-2xl text-black">Instance destroyed — billing stopped.</h1>
+        <p className="text-sm text-gray-600">You can close this tab.</p>
+      </div>
+    );
+  }
+
   if (switching) {
     const name = models.find((m) => m.id === selectedRepo)?.name ?? selectedRepo;
     return (
@@ -332,6 +374,9 @@ export const Queue:FC = () => {
           setSelectedRepo={setSelectedRepo}
           loadedName={status?.display_name ?? null}
           switchError={switchError}
+          teardownAvailable={teardownAvailable}
+          onTeardown={handleTeardown}
+          teardownError={teardownError}
         />
       )}
     </>
