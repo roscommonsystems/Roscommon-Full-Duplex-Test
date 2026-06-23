@@ -64,6 +64,7 @@ interface HomepageProps {
   selectedRepo: string;
   setSelectedRepo: (value: string) => void;
   loadedName: string | null;
+  switchError: string | null;
 }
 
 const Homepage = ({
@@ -77,6 +78,7 @@ const Homepage = ({
   selectedRepo,
   setSelectedRepo,
   loadedName,
+  switchError,
 }: HomepageProps) => {
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
@@ -164,6 +166,8 @@ const Homepage = ({
           <p className="text-center text-red-500">Please enable your microphone before proceeding</p>
         )}
 
+        {switchError && <p className="text-center text-red-500">{switchError}</p>}
+
         <Button onClick={async () => await startConnection()}>Connect</Button>
       </div>
     </div>
@@ -177,8 +181,10 @@ export const Queue:FC = () => {
   const [hasMicrophoneAccess, setHasMicrophoneAccess] = useState<boolean>(false);
   const [showMicrophoneAccessMessage, setShowMicrophoneAccessMessage] = useState<boolean>(false);
   const modelParams = useModelParams();
-  const { models, status } = useModels();
+  const { models, status, refreshStatus } = useModels();
   const [selectedRepo, setSelectedRepo] = useState<string>("");
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   useEffect(() => {
     if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
   }, [status, selectedRepo]);
@@ -240,6 +246,46 @@ export const Queue:FC = () => {
     }
   }, [startProcessor, getMicrophoneAccess]);
 
+  const ensureModelLoaded = useCallback(async (): Promise<boolean> => {
+    const s = await refreshStatus();
+    if (s && s.state === "ready" && s.current_repo === selectedRepo) return true;
+    setSwitching(true);
+    setSwitchError(null);
+    const r = await fetch("/api/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo: selectedRepo }),
+    });
+    if (r.status === 200) { setSwitching(false); return true; }
+    if (r.status !== 202) {
+      setSwitchError("Could not start model switch."); setSwitching(false); return false;
+    }
+    // poll until ready/error
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 2000));
+      const st = await refreshStatus();
+      if (st?.state === "ready") { setSwitching(false); return true; }
+      if (st?.state === "error") {
+        setSwitchError(st.error || "Model failed to load."); setSwitching(false); return false;
+      }
+    }
+  }, [refreshStatus, selectedRepo]);
+
+  const connect = useCallback(async () => {
+    const ok = await ensureModelLoaded();
+    if (ok) await startConnection();
+  }, [ensureModelLoaded, startConnection]);
+
+  if (switching) {
+    const name = models.find((m) => m.id === selectedRepo)?.name ?? selectedRepo;
+    return (
+      <div className="text-center h-screen flex flex-col items-center justify-center gap-3">
+        <h1 className="text-2xl text-black">Loading {name}…</h1>
+        <p className="text-sm text-gray-600">This takes ~45 seconds. Please wait.</p>
+      </div>
+    );
+  }
+
   return (
     <>
       {(hasMicrophoneAccess && audioContext.current && worklet.current) ? (
@@ -253,7 +299,7 @@ export const Queue:FC = () => {
         />
       ) : (
         <Homepage
-          startConnection={startConnection}
+          startConnection={connect}
           showMicrophoneAccessMessage={showMicrophoneAccessMessage}
           textPrompt={modelParams.textPrompt}
           setTextPrompt={modelParams.setTextPrompt}
@@ -263,6 +309,7 @@ export const Queue:FC = () => {
           selectedRepo={selectedRepo}
           setSelectedRepo={setSelectedRepo}
           loadedName={status?.display_name ?? null}
+          switchError={switchError}
         />
       )}
     </>
