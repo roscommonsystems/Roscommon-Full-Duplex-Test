@@ -1,64 +1,60 @@
 #!/usr/bin/env python3
-"""
-serve.py — Launch the Roscommon Full Duplex Test server (NVIDIA PersonaPlex / Moshi).
+"""serve.py — Roscommon Full Duplex Test supervisor.
 
-Thin Python entrypoint around NVIDIA's `moshi.server`. It:
-  - picks which model to load (--hf-repo),
-  - writes the served UI's config.json with a friendly model name (read from
-    models.json) so the frontend can display which model is loaded,
-  - serves our custom-built client (client/dist) via --static,
-  - starts the full-duplex speech-to-speech server with temporary SSL certs.
-
-Prerequisites:
-  - moshi installed (run provision.sh first).
-  - client built: `cd client && npm install && npm run build`.
-  - Accept the model license + set HF_TOKEN:
-      https://huggingface.co/nvidia/personaplex-7b-v1
-      https://huggingface.co/settings/tokens
-
-Usage:
-    export HF_TOKEN=hf_xxxxxxxx
-    python serve.py                                   # base model
-    python serve.py --hf-repo kyutai/personaplex-rl-seamless
-    python serve.py --hf-repo demegire/personaplex-finetune-pharma
-    python serve.py --port 9000 --cpu-offload
+Owns the public port: serves the built client, exposes the model-select
+control API, manages a moshi.server child, and reverse-proxies /api/chat
+to it. Selecting a model in the UI restarts the child with a new --hf-repo.
 """
 import argparse
-import json
+import functools
 import os
+import ssl
 import subprocess
 import sys
 import tempfile
+
+from aiohttp import web
+
+from supervisor.registry import ModelRegistry
+from supervisor.child import ChildManager
+from supervisor.app import create_app
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = "nvidia/personaplex-7b-v1"
 
 
-def model_display_name(hf_repo: str) -> str:
-    """Map an HF repo id to a friendly name using models.json (fallback: the id)."""
-    try:
-        with open(os.path.join(ROOT, "models.json"), encoding="utf-8") as f:
-            for m in json.load(f):
-                if m.get("id") == hf_repo:
-                    return m.get("name", hf_repo)
-    except (OSError, ValueError):
-        pass
-    return hf_repo
+def build_moshi_cmd(repo, port, cpu_offload=False):
+    cmd = [sys.executable, "-m", "moshi.server",
+           "--host", "127.0.0.1", "--port", str(port), "--hf-repo", repo]
+    if cpu_offload:
+        cmd.append("--cpu-offload")
+    return cmd
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Serve Roscommon Full Duplex Test.")
-    parser.add_argument("--host", default="0.0.0.0",
-                        help="bind address (default: 0.0.0.0, required for external access)")
-    parser.add_argument("--port", type=int, default=8998, help="port (default: 8998)")
-    parser.add_argument("--hf-repo", default=DEFAULT_REPO,
-                        help=f"HF repo of the model to load (default: {DEFAULT_REPO})")
-    parser.add_argument("--static", default=os.path.join(ROOT, "client", "dist"),
-                        help="directory of the built client to serve (default: client/dist)")
-    parser.add_argument("--cpu-offload", action="store_true",
-                        help="offload model layers to CPU if GPU VRAM is insufficient "
-                             "(requires the `accelerate` package)")
-    args = parser.parse_args()
+def self_signed_ssl_context():
+    """Generate a throwaway self-signed cert and return an SSLContext."""
+    d = tempfile.mkdtemp(prefix="roscommon-ssl-")
+    cert, key = os.path.join(d, "cert.pem"), os.path.join(d, "key.pem")
+    subprocess.check_call([
+        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", key, "-out", cert, "-days", "365",
+        "-subj", "/CN=roscommon-full-duplex",
+    ])
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert, key)
+    return ctx
+
+
+def main():
+    p = argparse.ArgumentParser(description="Serve Roscommon Full Duplex Test.")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8998)
+    p.add_argument("--child-port", type=int, default=8999)
+    p.add_argument("--hf-repo", default=DEFAULT_REPO, help="model to pre-load at boot")
+    p.add_argument("--static", default=os.path.join(ROOT, "client", "dist"))
+    p.add_argument("--cpu-offload", action="store_true")
+    p.add_argument("--no-ssl", action="store_true", help="serve plain HTTP (local testing)")
+    args = p.parse_args()
 
     if not os.environ.get("HF_TOKEN"):
         sys.exit(
@@ -67,36 +63,35 @@ def main() -> int:
             "  2) Create a READ token: https://huggingface.co/settings/tokens\n"
             "  3) export HF_TOKEN=hf_xxxxxxxx   (then re-run)"
         )
-
     os.environ.setdefault("HF_HOME", "/workspace/.hf_home")
 
-    # Tell the UI which model is loaded (frontend reads ./config.json).
-    if os.path.isdir(args.static):
-        name = model_display_name(args.hf_repo)
-        with open(os.path.join(args.static, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"modelName": name, "hfRepo": args.hf_repo}, f)
-        print(f"Serving model: {name}  ({args.hf_repo})")
-    else:
+    if not os.path.isdir(args.static):
         print(f"WARNING: static dir not found ({args.static}); "
               "build the client with `cd client && npm install && npm run build`.")
 
-    ssl_dir = tempfile.mkdtemp(prefix="moshi-ssl-")
-    cmd = [
-        sys.executable, "-m", "moshi.server",
-        "--host", args.host,
-        "--port", str(args.port),
-        "--hf-repo", args.hf_repo,
-        "--static", args.static,
-        "--ssl", ssl_dir,
-    ]
-    if args.cpu_offload:
-        cmd.append("--cpu-offload")
+    registry = ModelRegistry.from_file(os.path.join(ROOT, "models.json"))
+    if not registry.has(args.hf_repo):
+        sys.exit(f"ERROR: --hf-repo {args.hf_repo} is not in models.json")
 
-    print(f"Launching: {' '.join(cmd)}")
-    print("Once loaded, open https://<public-ip>:<mapped-port> "
-          "(self-signed cert — click through the warning, then allow mic).")
-    return subprocess.call(cmd)
+    builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload)
+    child = ChildManager(builder, port=args.child_port)
+    app = create_app(registry, child, static_dir=args.static)
+
+    async def _boot(app):
+        # Pre-load the default model before accepting conversations.
+        await child.switch(args.hf_repo)
+    async def _shutdown(app):
+        await child.aclose()
+    app.on_startup.append(_boot)
+    app.on_cleanup.append(_shutdown)
+
+    ssl_ctx = None if args.no_ssl else self_signed_ssl_context()
+    scheme = "http" if args.no_ssl else "https"
+    print(f"Pre-loading {registry.display_name(args.hf_repo)} ({args.hf_repo})...")
+    print(f"Serving on {scheme}://<public-ip>:{args.port} "
+          f"(self-signed cert — click through the warning, then allow mic).")
+    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_ctx)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

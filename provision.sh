@@ -59,9 +59,9 @@ if [ "$code" != "200" ]; then
 fi
 echo "HuggingFace reachable (HTTP 200)."
 
-log "Installing system dependencies (opus, portaudio)"
+log "Installing system dependencies (opus, portaudio, openssl)"
 apt-get update -qq || true
-apt-get install -y -qq libopus-dev libportaudio2
+apt-get install -y -qq libopus-dev libportaudio2 openssl
 
 log "Cloning PersonaPlex repository"
 if [ ! -d "$REPO_DIR/.git" ]; then
@@ -90,6 +90,9 @@ uv pip install \
   'sphn>=0.1.4,<0.2' \
   'aiohttp>=3.10.5,<3.11'
 
+log "Installing supervisor dependencies"
+pip install aiohttp
+
 log "Sanity check — torch sees the GPU"
 python - <<'PY'
 import torch
@@ -105,9 +108,8 @@ cat > /workspace/run_moshi.sh <<EOF
 source $VENV/bin/activate
 export HF_TOKEN=$HF_TOKEN
 export HF_HOME=$HF_HOME
-export SSL_DIR=\$(mktemp -d)
-cd $REPO_DIR
-exec python -m moshi.server --host 0.0.0.0 --port $PORT --ssl "\$SSL_DIR"
+cd /workspace/Roscommon-Full-Duplex-Test
+exec python serve.py
 EOF
 chmod +x /workspace/run_moshi.sh
 
@@ -117,7 +119,7 @@ tmux new-session -d -s moshi 'bash /workspace/run_moshi.sh > /workspace/moshi.lo
 log "Waiting for model to load (first run downloads ~16GB; up to ~10 min)"
 ready=0
 for _ in $(seq 1 60); do
-  if grep -q "Running on https://0.0.0.0:$PORT" /workspace/moshi.log 2>/dev/null; then
+  if grep -q "Pre-loading" /workspace/moshi.log 2>/dev/null; then
     ready=1; break
   fi
   sleep 10
