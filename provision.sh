@@ -12,6 +12,9 @@
 #   3. Create a READ token at:
 #        https://huggingface.co/settings/tokens
 #
+#   (optional) For the in-UI "Shut down instance" button, also set:
+#        VAST_API_KEY=<your vast.ai account API key>   (https://cloud.vast.ai/manage-keys/)
+#
 # HOW TO USE — pick ONE:
 #
 #   A) Manually, after SSHing into the instance:
@@ -141,6 +144,9 @@ cat > /workspace/run_moshi.sh <<EOF
 source $VENV/bin/activate
 export HF_TOKEN=$HF_TOKEN
 export HF_HOME=$HF_HOME
+export VAST_API_KEY=${VAST_API_KEY:-}
+export CONTAINER_ID=${CONTAINER_ID:-}
+export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
 cd /workspace/Roscommon-Full-Duplex-Test
 exec python serve.py
 EOF
