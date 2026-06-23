@@ -359,6 +359,7 @@ export const Queue:FC = () => {
         worklet={worklet as MutableRefObject<AudioWorkletNode|null>}
         theme={theme}
         startConnection={startConnection}
+        modelName={status?.display_name ?? null}
         {...modelParams}
         />
       ) : (

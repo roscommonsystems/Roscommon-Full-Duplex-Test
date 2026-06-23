@@ -26,6 +26,7 @@ type ConversationProps = {
   onConversationEnd?: () => void;
   isBypass?: boolean;
   startConnection: () => Promise<void>;
+  modelName?: string | null;
 } & Partial<ModelParamsValues>;
 
 
@@ -88,6 +89,7 @@ export const Conversation:FC<ConversationProps> = ({
   isBypass=false,
   email,
   theme,
+  modelName,
   ...params
 }) => {
   const getAudioStats = useRef<() => AudioStats>(() => ({
@@ -251,6 +253,11 @@ export const Conversation:FC<ConversationProps> = ({
           </Button>
           <div className={`h-4 w-4 rounded-full ${socketColor}`} />
         </div>
+        {modelName && (
+          <p className="text-center text-xs text-gray-500 mt-2">
+            Model: <span className="font-medium">{modelName}</span>
+          </p>
+        )}
         {audioContext.current && worklet.current && <MediaContext.Provider value={
           {
             startRecording,
