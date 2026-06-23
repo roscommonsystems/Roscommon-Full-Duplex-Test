@@ -52,18 +52,22 @@ async def _proxy_ws(request):
     ws_server = web.WebSocketResponse()
     await ws_server.prepare(request)
     target = f"ws://127.0.0.1:{child.port}{request.rel_url}"
-    async with session.ws_connect(target) as ws_client:
-        async def pump(src, dst):
-            async for msg in src:
-                if msg.type == aiohttp.WSMsgType.BINARY:
-                    await dst.send_bytes(msg.data)
-                elif msg.type == aiohttp.WSMsgType.TEXT:
-                    await dst.send_str(msg.data)
-                elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,
-                                  aiohttp.WSMsgType.ERROR):
-                    break
-            await dst.close()
-        await asyncio.gather(pump(ws_server, ws_client), pump(ws_client, ws_server))
+    try:
+        async with session.ws_connect(target) as ws_client:
+            async def pump(src, dst):
+                async for msg in src:
+                    if msg.type == aiohttp.WSMsgType.BINARY:
+                        await dst.send_bytes(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.TEXT:
+                        await dst.send_str(msg.data)
+                    elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,
+                                      aiohttp.WSMsgType.ERROR):
+                        break
+                await dst.close()
+            await asyncio.gather(pump(ws_server, ws_client), pump(ws_client, ws_server))
+    finally:
+        if not ws_server.closed:
+            await ws_server.close()
     return ws_server
 
 
@@ -87,10 +91,11 @@ async def handle_static(request):
     if not static_dir:
         return web.Response(status=404, text="no static dir")
     rel = request.match_info.get("tail", "")
-    candidate = os.path.normpath(os.path.join(static_dir, rel))
-    if candidate.startswith(os.path.abspath(static_dir)) and os.path.isfile(candidate):
+    root = os.path.abspath(static_dir)
+    candidate = os.path.normpath(os.path.join(root, rel))
+    if (candidate == root or candidate.startswith(root + os.sep)) and os.path.isfile(candidate):
         return web.FileResponse(candidate)
-    index = os.path.join(static_dir, "index.html")
+    index = os.path.join(root, "index.html")
     if os.path.isfile(index):
         return web.FileResponse(index)
     return web.Response(status=404, text="not found")

@@ -33,9 +33,18 @@ async def backend(aiohttp_server):
                 await ws.send_bytes(b"echo:" + msg.data)
         return ws
 
+    async def pushchat(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await ws.send_str("hello-text")
+        await ws.send_bytes(b"server-push")
+        await ws.close()
+        return ws
+
     app = web.Application()
     app.router.add_get("/api/ping", ping)
     app.router.add_get("/api/chat", chat)
+    app.router.add_get("/api/pushchat", pushchat)
     return await aiohttp_server(app)
 
 
@@ -54,6 +63,18 @@ async def test_ws_proxied_to_child(aiohttp_client, backend):
     await ws.send_bytes(b"hello")
     msg = await asyncio.wait_for(ws.receive(), timeout=5)
     assert msg.data == b"echo:hello"
+    await ws.close()
+
+
+async def test_ws_server_push_text_and_binary(aiohttp_client, backend):
+    app = create_app(ModelRegistry([{"id": "repo-a", "name": "A"}]), FakeChild(backend.port))
+    client = await aiohttp_client(app)
+    ws = await client.ws_connect("/api/pushchat")
+    m1 = await asyncio.wait_for(ws.receive(), timeout=5)
+    m2 = await asyncio.wait_for(ws.receive(), timeout=5)
+    got = {m1.data, m2.data}
+    assert "hello-text" in got
+    assert b"server-push" in got
     await ws.close()
 
 
