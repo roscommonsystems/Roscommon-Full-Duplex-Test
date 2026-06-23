@@ -3,6 +3,8 @@ import asyncio
 import aiohttp
 from aiohttp import web
 
+from supervisor import teardown as teardown_mod
+
 _HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "content-length", "host",
@@ -44,6 +46,23 @@ async def handle_select(request):
         return web.json_response({"state": "ready"}, status=200)
     child.request_switch(repo)
     return web.json_response({"state": "loading"}, status=202)
+
+
+async def handle_teardown_available(request):
+    return web.json_response({"available": teardown_mod.teardown_available()})
+
+
+async def handle_teardown(request):
+    if not teardown_mod.teardown_available():
+        return web.json_response({"error": "teardown not configured"}, status=503)
+    api_key = os.environ["VAST_API_KEY"]
+    instance_id = teardown_mod.resolve_instance_id()
+    session = request.app["_client_session"]
+    try:
+        result = await teardown_mod.destroy_self(session, api_key, instance_id)
+    except Exception as e:  # noqa: BLE001
+        return web.json_response({"error": str(e)}, status=502)
+    return web.json_response(result, status=200)
 
 
 async def _proxy_ws(request):
@@ -121,6 +140,8 @@ def create_app(registry, child, static_dir=None):
     app.router.add_get("/api/models", handle_models)
     app.router.add_get("/api/status", handle_status)
     app.router.add_post("/api/select", handle_select)
+    app.router.add_get("/api/teardown/available", handle_teardown_available)
+    app.router.add_post("/api/teardown", handle_teardown)
     app.router.add_route("*", "/api/{tail:.*}", handle_proxy)
     app.router.add_get("/{tail:.*}", handle_static)
     app.on_startup.append(_on_startup)
