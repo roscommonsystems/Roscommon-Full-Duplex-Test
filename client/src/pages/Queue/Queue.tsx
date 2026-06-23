@@ -189,6 +189,9 @@ export const Queue:FC = () => {
     if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
   }, [status, selectedRepo]);
 
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   const audioContext = useRef<AudioContext | null>(null);
   const worklet = useRef<AudioWorkletNode | null>(null);
   
@@ -247,6 +250,10 @@ export const Queue:FC = () => {
   }, [startProcessor, getMicrophoneAccess]);
 
   const ensureModelLoaded = useCallback(async (): Promise<boolean> => {
+    if (!selectedRepo) {
+      setSwitchError("Please select a model first.");
+      return false;
+    }
     const s = await refreshStatus();
     if (s && s.state === "ready" && s.current_repo === selectedRepo) return true;
     setSwitching(true);
@@ -260,13 +267,28 @@ export const Queue:FC = () => {
     if (r.status !== 202) {
       setSwitchError("Could not start model switch."); setSwitching(false); return false;
     }
-    // poll until ready/error
+    // poll until ready/error, bailing out on unmount or repeated connection loss
+    let nullCount = 0;
     for (;;) {
+      if (!mountedRef.current) return false;
       await new Promise((res) => setTimeout(res, 2000));
       const st = await refreshStatus();
-      if (st?.state === "ready") { setSwitching(false); return true; }
-      if (st?.state === "error") {
-        setSwitchError(st.error || "Model failed to load."); setSwitching(false); return false;
+      if (!mountedRef.current) return false;
+      if (st === null) {
+        nullCount += 1;
+        if (nullCount >= 5) {
+          setSwitchError("Lost connection to the server while loading the model.");
+          setSwitching(false);
+          return false;
+        }
+        continue;
+      }
+      nullCount = 0;
+      if (st.state === "ready") { setSwitching(false); return true; }
+      if (st.state === "error") {
+        setSwitchError(st.error || "Model failed to load.");
+        setSwitching(false);
+        return false;
       }
     }
   }, [refreshStatus, selectedRepo]);
