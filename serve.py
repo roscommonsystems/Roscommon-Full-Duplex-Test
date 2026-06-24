@@ -36,14 +36,35 @@ def shared_voices_dir():
     return matches[-1] if matches else None
 
 
-def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
+async def _download_weight(weight_repo, weight_file):
+    """Download a single weight file from HF (cached) without blocking the loop."""
+    from huggingface_hub import hf_hub_download
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, functools.partial(hf_hub_download, weight_repo, weight_file)
+    )
+
+
+async def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
+    """Build the moshi.server argv for a model. Most models load directly from
+    their HF repo. Fine-tunes packaged as bare weights (e.g. pharma) declare a
+    `base_repo` (for config/tokenizer/mimi/voices) and a `moshi_weight_file`
+    (their checkpoint), which we download and pass via --moshi-weight."""
+    entry = (registry.get(repo) if registry else None) or {}
+    base_repo = entry.get("base_repo")
+    hf_repo = base_repo or repo
     cmd = [sys.executable, "-m", "moshi.server",
-           "--host", "127.0.0.1", "--port", str(port), "--hf-repo", repo]
+           "--host", "127.0.0.1", "--port", str(port), "--hf-repo", hf_repo]
     if cpu_offload:
         cmd.append("--cpu-offload")
-    # Some fine-tunes (e.g. pharma) have no voices.tgz; lend them the base voices.
-    entry = registry.get(repo) if registry else None
-    if entry and entry.get("needs_shared_voices"):
+    weight_file = entry.get("moshi_weight_file")
+    if weight_file:
+        weight_repo = entry.get("moshi_weight_repo", repo)
+        path = await _download_weight(weight_repo, weight_file)
+        cmd += ["--moshi-weight", path]
+    # Models loaded on a base repo (or flagged) have no voices.tgz of their own;
+    # lend them the base model's voices.
+    if base_repo or entry.get("needs_shared_voices"):
         vd = shared_voices_dir()
         if vd:
             cmd += ["--voice-prompt-dir", vd]
