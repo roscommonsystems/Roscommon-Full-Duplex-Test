@@ -10,7 +10,7 @@ import { TextDisplay } from "./components/TextDisplay/TextDisplay";
 import { MediaContext } from "./MediaContext";
 import { ServerInfo } from "./components/ServerInfo/ServerInfo";
 import { ModelParamsValues, useModelParams } from "./hooks/useModelParams";
-import { useUserTranscription } from "./hooks/useUserTranscription";
+import { useTranscript } from "./hooks/useTranscript";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { type ThemeType } from "./hooks/useSystemTheme";
@@ -136,8 +136,7 @@ export const Conversation:FC<ConversationProps> = ({
     uri: WSURL,
     onDisconnect,
   });
-  const { available: transcribeAvailable, userText } =
-    useUserTranscription(socketStatus === "connected");
+  const { turns } = useTranscript(socket);
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
       audioChunks.current.push(e.data);
@@ -286,12 +285,7 @@ export const Conversation:FC<ConversationProps> = ({
               </div>
           </div>
           <div className="scrollbar player-text" ref={textContainerRef}>
-            <TextDisplay containerRef={textContainerRef}/>
-            {transcribeAvailable && userText.length > 0 && (
-              <div className="player-text-user text-sm text-blue-700 mt-2">
-                <span className="font-semibold">You: </span>{userText.join("")}
-              </div>
-            )}
+            <TextDisplay containerRef={textContainerRef} turns={turns}/>
           </div>
           <div className="player-stats hidden md:block">
             <ServerAudioStats getAudioStats={getAudioStats} />
