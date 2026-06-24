@@ -31,6 +31,7 @@ type ConversationProps = {
   startConnection: () => Promise<void>;
   modelName?: string | null;
   injections?: Injection[];
+  voiceOverride?: string;
 } & Partial<ModelParamsValues>;
 
 
@@ -41,6 +42,7 @@ const buildURL = ({
   email,
   textSeed,
   audioSeed,
+  voiceOverride,
 }: {
   workerAddr: string;
   params: ModelParamsValues;
@@ -48,6 +50,7 @@ const buildURL = ({
   email?: string;
   textSeed: number;
   audioSeed: number;
+  voiceOverride?: string;
 }) => {
   const newWorkerAddr = useMemo(() => {
     if (workerAddr == "same" || workerAddr == "") {
@@ -75,7 +78,7 @@ const buildURL = ({
   url.searchParams.append("repetition_penalty_context", params.repetitionPenaltyContext.toString());
   url.searchParams.append("repetition_penalty", params.repetitionPenalty.toString());
   url.searchParams.append("text_prompt", params.textPrompt.toString());
-  url.searchParams.append("voice_prompt", params.voicePrompt.toString());
+  url.searchParams.append("voice_prompt", (voiceOverride || params.voicePrompt).toString());
   console.log(url.toString());
   return url.toString();
 };
@@ -95,6 +98,7 @@ export const Conversation:FC<ConversationProps> = ({
   theme,
   modelName,
   injections,
+  voiceOverride,
   ...params
 }) => {
   const getAudioStats = useRef<() => AudioStats>(() => ({
@@ -127,6 +131,7 @@ export const Conversation:FC<ConversationProps> = ({
     email: email,
     textSeed: textSeed,
     audioSeed: audioSeed,
+    voiceOverride,
   });
 
   const onDisconnect = useCallback(() => {

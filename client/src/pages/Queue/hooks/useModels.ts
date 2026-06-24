@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type ModelInfo = { id: string; name: string; description?: string; supports_scenarios?: boolean };
+export type ModelInfo = { id: string; name: string; description?: string; supports_scenarios?: boolean; voice_wav?: string };
 export type Status = {
   current_repo: string | null;
   display_name: string | null;

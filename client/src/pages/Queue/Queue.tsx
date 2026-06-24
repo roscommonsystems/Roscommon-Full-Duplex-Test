@@ -69,6 +69,7 @@ interface HomepageProps {
   selectedScenarioId: string;
   setSelectedScenarioId: (value: string) => void;
   showScenarios: boolean;
+  showVoice: boolean;
   loadedName: string | null;
   switchError: string | null;
   teardownAvailable: boolean;
@@ -90,6 +91,7 @@ const Homepage = ({
   selectedScenarioId,
   setSelectedScenarioId,
   showScenarios,
+  showVoice,
   loadedName,
   switchError,
   teardownAvailable,
@@ -181,6 +183,7 @@ const Homepage = ({
           </div>
         )}
 
+        {showVoice && (
         <div className="w-full">
           <label htmlFor="voice-prompt" className="block text-left text-base font-medium text-gray-700 mb-2">
             Voice:
@@ -199,6 +202,7 @@ const Homepage = ({
             ))}
           </select>
         </div>
+        )}
 
         {showMicrophoneAccessMessage && (
           <p className="text-center text-red-500">Please enable your microphone before proceeding</p>
@@ -241,6 +245,8 @@ export const Queue:FC = () => {
   const selectedModel = models.find((m) => m.id === selectedRepo);
   const showScenarios = !!selectedModel?.supports_scenarios && scenarios.length > 0;
   const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId);
+  // Models that pin their own voice (pharma's .wav) hide the .pt voice dropdown.
+  const showVoice = !selectedModel?.voice_wav;
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const { available: teardownAvailable, teardown } = useTeardown();
@@ -421,6 +427,7 @@ export const Queue:FC = () => {
         startConnection={startConnection}
         modelName={status?.display_name ?? null}
         injections={selectedScenario?.injections}
+        voiceOverride={selectedModel?.voice_wav}
         {...modelParams}
         />
       ) : (
@@ -438,6 +445,7 @@ export const Queue:FC = () => {
           selectedScenarioId={selectedScenarioId}
           setSelectedScenarioId={setSelectedScenarioId}
           showScenarios={showScenarios}
+          showVoice={showVoice}
           loadedName={status?.display_name ?? null}
           switchError={switchError}
           teardownAvailable={teardownAvailable}
