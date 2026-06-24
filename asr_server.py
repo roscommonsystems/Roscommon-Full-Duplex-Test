@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """asr_server.py — user-speech transcription server for the "You:" transcript.
 
-Serves a /api/transcribe WebSocket that receives the SAME opus audio frames the
-client sends to moshi, decodes them to PCM with sphn (like moshi's server), and
-transcribes fixed ~2.5s windows with faster-whisper, emitting recognized text
-as WS text frames.
+Serves a /api/transcribe WebSocket that receives raw 16 kHz mono float32 PCM
+frames (the client captures + downsamples its mic) and transcribes fixed ~2.5s
+windows with faster-whisper, emitting recognized text as WS text frames.
 
-faster-whisper (CTranslate2) is isolated from moshi's torch build, so it cannot
-break the GPU; it falls back to CPU if CUDA isn't usable. Decoding runs on the
-recv path; transcription runs in a background task so a slow transcribe never
-starves the opus decoder.
+No opus/sphn decoding — the client sends PCM directly, which is deterministic
+and avoids native-decoder threading issues. faster-whisper (CTranslate2) is
+isolated from moshi's torch build and falls back to CPU if CUDA isn't usable.
 
 Usage: python asr_server.py --port 8997 [--model base.en] [--device cuda]
 """
@@ -17,12 +15,10 @@ import argparse
 import asyncio
 
 import numpy as np
-import sphn
 from aiohttp import web
 from faster_whisper import WhisperModel
 
-SAMPLE_RATE = 24000  # Mimi / opus-reader PCM rate (matches moshi)
-ASR_RATE = 16000     # faster-whisper expects 16 kHz mono float32
+ASR_RATE = 16000  # client sends 16 kHz mono float32
 
 
 def load_model(model_name, device):
@@ -40,14 +36,6 @@ def load_model(model_name, device):
     raise RuntimeError(f"no working ASR device: {last}")
 
 
-def _resample_24k_to_16k(x):
-    n_out = int(len(x) * ASR_RATE / SAMPLE_RATE)
-    if n_out <= 0:
-        return np.zeros(0, dtype=np.float32)
-    idx = np.linspace(0, len(x) - 1, n_out)
-    return np.interp(idx, np.arange(len(x)), x).astype(np.float32)
-
-
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8997)
@@ -58,18 +46,16 @@ async def main():
 
     model = load_model(args.model, args.device)
     loop = asyncio.get_running_loop()
-    window = int(args.window_sec * SAMPLE_RATE)
+    window = int(args.window_sec * ASR_RATE)
 
-    def transcribe_pcm(pcm24):
-        pcm16 = _resample_24k_to_16k(pcm24)
+    def transcribe_pcm(pcm16):
         segments, _ = model.transcribe(pcm16, language="en", beam_size=1)
         return " ".join(s.text.strip() for s in segments).strip()
 
     async def handle(request):
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(max_msg_size=0)
         await ws.prepare(request)
-        reader = sphn.OpusStreamReader(SAMPLE_RATE)
-        chunks = []          # decoded PCM pieces awaiting transcription
+        chunks = []  # incoming PCM pieces awaiting transcription
 
         async def transcriber():
             acc = np.zeros(0, dtype=np.float32)
@@ -91,18 +77,10 @@ async def main():
         task = asyncio.ensure_future(transcriber())
         try:
             async for msg in ws:
-                if msg.type != web.WSMsgType.BINARY:
-                    continue
-                # sphn API (this version): feed with append_bytes, then drain
-                # decoded PCM with read_pcm(). Draining keeps the decoder alive.
-                try:
-                    reader.append_bytes(bytes(msg.data))
-                    pcm = reader.read_pcm()
-                except Exception as e:  # noqa: BLE001
-                    print(f"opus decode error: {e}", flush=True)
-                    continue
-                if pcm is not None and len(pcm):
-                    chunks.append(np.asarray(pcm, dtype=np.float32))
+                if msg.type == web.WSMsgType.BINARY:
+                    pcm = np.frombuffer(msg.data, dtype=np.float32)
+                    if len(pcm):
+                        chunks.append(pcm.copy())
         finally:
             task.cancel()
         return ws

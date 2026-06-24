@@ -136,7 +136,7 @@ export const Conversation:FC<ConversationProps> = ({
     uri: WSURL,
     onDisconnect,
   });
-  const { available: transcribeAvailable, userText, sendAudio } =
+  const { available: transcribeAvailable, userText } =
     useUserTranscription(socketStatus === "connected");
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
@@ -280,7 +280,7 @@ export const Conversation:FC<ConversationProps> = ({
                 }
                 theme={theme}
               />
-              <UserAudio theme={theme} onAudioChunk={sendAudio}/>
+              <UserAudio theme={theme}/>
               <div className="pt-8 text-sm flex justify-center items-center flex-col download-links">
                 {audioURL && <div><a href={audioURL} download={`personaplex_audio.${getExtension("audio")}`} className="pt-2 text-center block">Download audio</a></div>}
               </div>
