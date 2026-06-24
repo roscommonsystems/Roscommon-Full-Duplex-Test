@@ -141,7 +141,7 @@ python -m venv --system-site-packages /venv/pharma
 /venv/pharma/bin/pip install \
   'numpy>=1.26,<2.2' 'safetensors>=0.4.0,<0.5' 'huggingface-hub>=0.24,<0.25' \
   'einops==0.7' 'sentencepiece==0.2' 'sounddevice==0.5' 'sphn>=0.1.4,<0.2' \
-  'aiohttp>=3.10.5,<3.11'
+  'aiohttp>=3.10.5,<3.11' 'pyloudnorm'
 echo "Forked moshi venv ready. Verify on the box with:"
 echo "  /venv/pharma/bin/python -c \"import moshi, torch; print('cuda', torch.cuda.is_available())\""
 
