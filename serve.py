@@ -6,6 +6,7 @@ control API, manages a moshi.server child, and reverse-proxies /api/chat
 to it. Selecting a model in the UI restarts the child with a new --hf-repo.
 """
 import argparse
+import asyncio
 import functools
 import glob
 import os

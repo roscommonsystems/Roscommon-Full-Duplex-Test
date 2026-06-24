@@ -1,5 +1,26 @@
+import sys
+
 import serve
 from supervisor.registry import ModelRegistry
+
+
+async def test_download_weight_runs_in_executor(monkeypatch):
+    # Regression: _download_weight uses asyncio.get_running_loop(); a missing
+    # `import asyncio` in serve.py only surfaces here (the pharma path), not in
+    # build_moshi_cmd tests that stub _download_weight out entirely.
+    calls = {}
+
+    def fake_hf_hub_download(repo, filename):
+        calls["repo"], calls["filename"] = repo, filename
+        return "/cache/weights.safetensors"
+
+    fake_hub = type(sys)("huggingface_hub")
+    fake_hub.hf_hub_download = fake_hf_hub_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+
+    path = await serve._download_weight("some/repo", "weights.safetensors")
+    assert path == "/cache/weights.safetensors"
+    assert calls == {"repo": "some/repo", "filename": "weights.safetensors"}
 
 
 async def test_build_cmd_plain_model_loads_from_its_own_repo():

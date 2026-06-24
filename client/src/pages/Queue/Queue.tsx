@@ -7,7 +7,7 @@ import { Button } from "../../components/Button/Button";
 import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
-import { useModels, ModelInfo } from "./hooks/useModels";
+import { useModels, ModelInfo, Status } from "./hooks/useModels";
 import { useTeardown } from "./hooks/useTeardown";
 
 // Voice presets with human-readable descriptions.
@@ -282,6 +282,25 @@ export const Queue:FC = () => {
     }
   }, [startProcessor, getMicrophoneAccess]);
 
+  // Poll /api/status until the supervisor settles on "ready" or "error".
+  // Returns the final status, or null if the connection was lost or we unmounted.
+  const pollUntilSettled = useCallback(async (): Promise<Status | null> => {
+    let nullCount = 0;
+    for (;;) {
+      if (!mountedRef.current) return null;
+      await new Promise((res) => setTimeout(res, 2000));
+      const st = await refreshStatus();
+      if (!mountedRef.current) return null;
+      if (st === null) {
+        nullCount += 1;
+        if (nullCount >= 5) return null;
+        continue;
+      }
+      nullCount = 0;
+      if (st.state === "ready" || st.state === "error") return st;
+    }
+  }, [refreshStatus]);
+
   const ensureModelLoaded = useCallback(async (): Promise<boolean> => {
     if (!selectedRepo) {
       setSwitchError("Please select a model first.");
@@ -291,40 +310,45 @@ export const Queue:FC = () => {
     if (s && s.state === "ready" && s.current_repo === selectedRepo) return true;
     setSwitching(true);
     setSwitchError(null);
-    const r = await fetch("/api/select", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: selectedRepo }),
-    });
-    if (r.status === 200) { setSwitching(false); return true; }
-    if (r.status !== 202) {
-      setSwitchError("Could not start model switch."); setSwitching(false); return false;
-    }
-    // poll until ready/error, bailing out on unmount or repeated connection loss
-    let nullCount = 0;
-    for (;;) {
-      if (!mountedRef.current) return false;
-      await new Promise((res) => setTimeout(res, 2000));
-      const st = await refreshStatus();
-      if (!mountedRef.current) return false;
-      if (st === null) {
-        nullCount += 1;
-        if (nullCount >= 5) {
+    // Start (or wait out) a switch to the selected model. The supervisor only
+    // runs one switch at a time and returns 409 "busy" while another is in
+    // flight — so a 409 isn't a failure, it means "wait, then try again".
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const r = await fetch("/api/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: selectedRepo }),
+      });
+      if (r.status === 200) { setSwitching(false); return true; }
+      if (r.status === 202 || r.status === 409) {
+        const st = await pollUntilSettled();
+        if (!mountedRef.current) return false;
+        if (st === null) {
           setSwitchError("Lost connection to the server while loading the model.");
           setSwitching(false);
           return false;
         }
+        if (st.state === "ready" && st.current_repo === selectedRepo) {
+          setSwitching(false);
+          return true;
+        }
+        if (st.state === "error") {
+          setSwitchError(st.error || "Model failed to load.");
+          setSwitching(false);
+          return false;
+        }
+        // Settled on a different model (a 409'd switch finished) — retry ours.
         continue;
       }
-      nullCount = 0;
-      if (st.state === "ready") { setSwitching(false); return true; }
-      if (st.state === "error") {
-        setSwitchError(st.error || "Model failed to load.");
-        setSwitching(false);
-        return false;
-      }
+      // 400 (unknown repo) or anything unexpected.
+      setSwitchError("Could not start model switch.");
+      setSwitching(false);
+      return false;
     }
-  }, [refreshStatus, selectedRepo]);
+    setSwitchError("The model is taking too long to switch. Please try again.");
+    setSwitching(false);
+    return false;
+  }, [refreshStatus, pollUntilSettled, selectedRepo]);
 
   const connect = useCallback(async () => {
     const ok = await ensureModelLoaded();
