@@ -8,6 +8,7 @@ import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 import { useModels, ModelInfo, Status } from "./hooks/useModels";
+import { useScenarios, Scenario } from "./hooks/useScenarios";
 import { useTeardown } from "./hooks/useTeardown";
 
 // Voice presets with human-readable descriptions.
@@ -64,6 +65,10 @@ interface HomepageProps {
   models: ModelInfo[];
   selectedRepo: string;
   setSelectedRepo: (value: string) => void;
+  scenarios: Scenario[];
+  selectedScenarioId: string;
+  setSelectedScenarioId: (value: string) => void;
+  showScenarios: boolean;
   loadedName: string | null;
   switchError: string | null;
   teardownAvailable: boolean;
@@ -81,6 +86,10 @@ const Homepage = ({
   models,
   selectedRepo,
   setSelectedRepo,
+  scenarios,
+  selectedScenarioId,
+  setSelectedScenarioId,
+  showScenarios,
   loadedName,
   switchError,
   teardownAvailable,
@@ -150,6 +159,28 @@ const Homepage = ({
           </select>
         </div>
 
+        {showScenarios && (
+          <div className="w-full">
+            <label htmlFor="scenario-select" className="block text-left text-base font-medium text-gray-700 mb-2">
+              Scenario (pharma demo):
+            </label>
+            <select
+              id="scenario-select"
+              value={selectedScenarioId}
+              onChange={(e) => setSelectedScenarioId(e.target.value)}
+              className="w-full p-3 bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
+            >
+              <option value="">No scenario (free conversation)</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <p className="text-left text-xs text-gray-500 mt-1">
+              Demo only — not clinically accurate.
+            </p>
+          </div>
+        )}
+
         <div className="w-full">
           <label htmlFor="voice-prompt" className="block text-left text-base font-medium text-gray-700 mb-2">
             Voice:
@@ -204,7 +235,12 @@ export const Queue:FC = () => {
   const [showMicrophoneAccessMessage, setShowMicrophoneAccessMessage] = useState<boolean>(false);
   const modelParams = useModelParams();
   const { models, status, refreshStatus } = useModels();
+  const { scenarios } = useScenarios();
   const [selectedRepo, setSelectedRepo] = useState<string>("");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
+  const selectedModel = models.find((m) => m.id === selectedRepo);
+  const showScenarios = !!selectedModel?.supports_scenarios && scenarios.length > 0;
+  const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const { available: teardownAvailable, teardown } = useTeardown();
@@ -384,6 +420,7 @@ export const Queue:FC = () => {
         theme={theme}
         startConnection={startConnection}
         modelName={status?.display_name ?? null}
+        injections={selectedScenario?.injections}
         {...modelParams}
         />
       ) : (
@@ -397,6 +434,10 @@ export const Queue:FC = () => {
           models={models}
           selectedRepo={selectedRepo}
           setSelectedRepo={setSelectedRepo}
+          scenarios={scenarios}
+          selectedScenarioId={selectedScenarioId}
+          setSelectedScenarioId={setSelectedScenarioId}
+          showScenarios={showScenarios}
           loadedName={status?.display_name ?? null}
           switchError={switchError}
           teardownAvailable={teardownAvailable}
