@@ -9,6 +9,7 @@ import argparse
 import functools
 import glob
 import os
+import shlex
 import ssl
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from aiohttp import web
 
 from supervisor.registry import ModelRegistry
 from supervisor.child import ChildManager
+from supervisor.asr import AsrChild
 from supervisor.app import create_app
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -94,6 +96,8 @@ def main():
     p.add_argument("--static", default=os.path.join(ROOT, "client", "dist"))
     p.add_argument("--cpu-offload", action="store_true")
     p.add_argument("--no-ssl", action="store_true", help="serve plain HTTP (local testing)")
+    p.add_argument("--asr-port", type=int, default=8997)
+    p.add_argument("--no-asr", action="store_true", help="disable user transcription")
     args = p.parse_args()
 
     if not os.environ.get("HF_TOKEN"):
@@ -115,7 +119,13 @@ def main():
 
     builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload, registry=registry)
     child = ChildManager(builder, port=args.child_port)
-    app = create_app(registry, child, static_dir=args.static)
+
+    asr = None
+    asr_cmd = os.environ.get("ASR_CMD")
+    if asr_cmd and not args.no_asr:
+        asr = AsrChild(shlex.split(asr_cmd), port=args.asr_port)
+
+    app = create_app(registry, child, static_dir=args.static, asr=asr)
 
     async def _boot(app):
         # Pre-load the default model before accepting conversations.
@@ -124,8 +134,15 @@ def main():
             print(f"Model ready: {registry.display_name(args.hf_repo)}", flush=True)
         else:
             print(f"Model failed to load: {child.error}", flush=True)
+        # Start the (persistent, model-agnostic) ASR child for user transcription.
+        if asr is not None:
+            await asr.start()
+            print(f"ASR {'ready' if asr.available else 'unavailable: ' + str(asr.error)}",
+                  flush=True)
     async def _shutdown(app):
         await child.aclose()
+        if asr is not None:
+            await asr.aclose()
     app.on_startup.append(_boot)
     app.on_cleanup.append(_shutdown)
 
