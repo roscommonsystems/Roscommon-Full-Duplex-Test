@@ -11,6 +11,8 @@ import { MediaContext } from "./MediaContext";
 import { ServerInfo } from "./components/ServerInfo/ServerInfo";
 import { ModelParamsValues, useModelParams } from "./hooks/useModelParams";
 import { useTranscript } from "./hooks/useTranscript";
+import { useInjectionScheduler } from "./hooks/useInjectionScheduler";
+import { Injection } from "../Queue/hooks/useScenarios";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { type ThemeType } from "./hooks/useSystemTheme";
@@ -28,6 +30,7 @@ type ConversationProps = {
   isBypass?: boolean;
   startConnection: () => Promise<void>;
   modelName?: string | null;
+  injections?: Injection[];
 } & Partial<ModelParamsValues>;
 
 
@@ -91,6 +94,7 @@ export const Conversation:FC<ConversationProps> = ({
   email,
   theme,
   modelName,
+  injections,
   ...params
 }) => {
   const getAudioStats = useRef<() => AudioStats>(() => ({
@@ -137,6 +141,7 @@ export const Conversation:FC<ConversationProps> = ({
     onDisconnect,
   });
   const { turns } = useTranscript(socket);
+  useInjectionScheduler({ socket, socketStatus, injections });
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
       audioChunks.current.push(e.data);
