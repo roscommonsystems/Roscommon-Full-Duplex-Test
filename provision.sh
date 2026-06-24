@@ -119,8 +119,8 @@ uv pip install \
 # aiohttp (the supervisor's only extra runtime dep) is already installed above
 # in the moshi deps block (pinned >=3.10.5,<3.11) — no separate install needed.
 
-log "Installing faster-whisper (user-transcription ASR; isolated from moshi's torch)"
-uv pip install faster-whisper
+log "Installing faster-whisper (+ CUDA libs for GPU; isolated from moshi's torch)"
+uv pip install faster-whisper nvidia-cublas-cu12 nvidia-cudnn-cu12
 
 log "Installing Node.js (to build the web client)"
 if ! command -v node >/dev/null 2>&1; then
@@ -150,7 +150,10 @@ export HF_HOME=$HF_HOME
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
-export ASR_CMD="${ASR_CMD:-python asr_server.py --port 8997 --model small.en --device cpu}"
+export ASR_CMD="\${ASR_CMD:-python asr_server.py --port 8997 --model medium.en --device cuda --cpu-model small.en}"
+# Let CTranslate2 (faster-whisper) find the pip-installed CUDA libs for GPU.
+PYSITE=\$(python -c "import site;print(site.getsitepackages()[0])" 2>/dev/null)
+export LD_LIBRARY_PATH="\$PYSITE/nvidia/cublas/lib:\$PYSITE/nvidia/cudnn/lib:\${LD_LIBRARY_PATH:-}"
 cd /workspace/Roscommon-Full-Duplex-Test
 exec python serve.py
 EOF

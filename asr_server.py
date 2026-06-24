@@ -21,17 +21,22 @@ from faster_whisper import WhisperModel
 ASR_RATE = 16000  # client sends 16 kHz mono float32
 
 
-def load_model(model_name, device):
-    attempts = [(device, "int8_float16"), ("cpu", "int8")] if device != "cpu" else [("cpu", "int8")]
+def load_model(model_name, device, cpu_model):
+    # Prefer the requested model on GPU (accurate + low latency); if CUDA isn't
+    # usable, fall back to a SMALLER model on CPU so it can still keep up.
+    attempts = []
+    if device != "cpu":
+        attempts.append((model_name, device, "float16"))
+    attempts.append((cpu_model, "cpu", "int8"))
     last = None
-    for dev, ctype in attempts:
+    for mname, dev, ctype in attempts:
         try:
-            m = WhisperModel(model_name, device=dev, compute_type=ctype)
+            m = WhisperModel(mname, device=dev, compute_type=ctype)
             list(m.transcribe(np.zeros(ASR_RATE, dtype=np.float32), language="en")[0])
-            print(f"ASR using device={dev} model={model_name}", flush=True)
+            print(f"ASR using device={dev} model={mname}", flush=True)
             return m
         except Exception as e:  # noqa: BLE001
-            print(f"ASR device {dev} unavailable: {e}", flush=True)
+            print(f"ASR {dev}/{mname} unavailable: {e}", flush=True)
             last = e
     raise RuntimeError(f"no working ASR device: {last}")
 
@@ -40,11 +45,12 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8997)
     ap.add_argument("--model", default="base.en")
+    ap.add_argument("--cpu-model", default="small.en", help="fallback model if CUDA fails")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--window-sec", type=float, default=2.5)
     args = ap.parse_args()
 
-    model = load_model(args.model, args.device)
+    model = load_model(args.model, args.device, args.cpu_model)
     loop = asyncio.get_running_loop()
     window = int(args.window_sec * ASR_RATE)
 
