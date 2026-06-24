@@ -59,6 +59,10 @@ async def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
     launcher = entry.get("server_python") or sys.executable
     cmd = [launcher, "-m", "moshi.server",
            "--host", "127.0.0.1", "--port", str(port), "--hf-repo", hf_repo]
+    if entry.get("server_python"):
+        # The forked moshi (pharma) warmup() calls torch.cuda.set_device(self.device);
+        # torch 2.11 rejects a bare "cuda" device, so pin an explicit GPU index.
+        cmd += ["--device", "cuda:0"]
     if cpu_offload:
         cmd.append("--cpu-offload")
     weight_file = entry.get("moshi_weight_file")

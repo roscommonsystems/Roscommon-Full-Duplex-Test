@@ -76,6 +76,8 @@ async def test_build_cmd_uses_server_python_when_set(monkeypatch):
     )
     assert cmd[0] == "/venv/pharma/bin/python"
     assert cmd[1:3] == ["-m", "moshi.server"]
+    # forked server needs an indexed CUDA device (torch 2.11 rejects bare "cuda")
+    assert cmd[cmd.index("--device") + 1] == "cuda:0"
 
 
 async def test_build_cmd_defaults_to_sys_executable():
@@ -83,3 +85,5 @@ async def test_build_cmd_defaults_to_sys_executable():
     reg = ModelRegistry([{"id": "nvidia/personaplex-7b-v1", "name": "Base"}])
     cmd = await serve.build_moshi_cmd("nvidia/personaplex-7b-v1", 8999, registry=reg)
     assert cmd[0] == sys.executable
+    # stock models must NOT get the forked-only --device override
+    assert "--device" not in cmd
