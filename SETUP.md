@@ -80,6 +80,16 @@ downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it
 - **Shut down instance** (button at the bottom, only shown if `VAST_API_KEY` was set) —
   destroys the instance and stops billing when you're done. Use this after a demo.
 
+### Live transcription (the user's words) — optional
+
+The "You:" live transcript needs a second model (a streaming ASR) running
+alongside PersonaPlex, which raises the VRAM requirement:
+
+- PersonaPlex ~19.5 GB + ASR ~2–6 GB ⇒ use a **32 GB GPU minimum, 48 GB
+  recommended** (e.g. the RTX PRO 5000). On a 24 GB card, omit it.
+- Enabled by the `ASR_CMD` env var (the ASR server's launch command). If `ASR_CMD`
+  is unset, the app runs normally and the transcript shows only the model's side.
+
 ---
 
 ## 5. Useful commands (on the instance)

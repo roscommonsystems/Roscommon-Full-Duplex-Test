@@ -147,6 +147,7 @@ export HF_HOME=$HF_HOME
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
+export ASR_CMD=${ASR_CMD:-}
 cd /workspace/Roscommon-Full-Duplex-Test
 exec python serve.py
 EOF
