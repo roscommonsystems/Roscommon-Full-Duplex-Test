@@ -6,8 +6,9 @@ import { type ThemeType } from "../../hooks/useSystemTheme";
 
 type UserAudioProps = {
   theme: ThemeType;
+  onAudioChunk?: (chunk: Uint8Array) => void;
 };
-export const UserAudio: FC<UserAudioProps> = ({theme}) => {
+export const UserAudio: FC<UserAudioProps> = ({theme, onAudioChunk}) => {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const { sendMessage, socketStatus } = useSocketContext();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,8 +29,9 @@ export const UserAudio: FC<UserAudioProps> = ({theme}) => {
         type: "audio",
         data: chunk,
       });
+      if (onAudioChunk) onAudioChunk(chunk);
     },
-    [sendMessage, socketStatus],
+    [sendMessage, socketStatus, onAudioChunk],
   );
 
   const { startRecordingUser, stopRecording } = useUserAudio({

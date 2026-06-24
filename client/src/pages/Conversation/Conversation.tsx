@@ -10,6 +10,7 @@ import { TextDisplay } from "./components/TextDisplay/TextDisplay";
 import { MediaContext } from "./MediaContext";
 import { ServerInfo } from "./components/ServerInfo/ServerInfo";
 import { ModelParamsValues, useModelParams } from "./hooks/useModelParams";
+import { useUserTranscription } from "./hooks/useUserTranscription";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { type ThemeType } from "./hooks/useSystemTheme";
@@ -135,6 +136,8 @@ export const Conversation:FC<ConversationProps> = ({
     uri: WSURL,
     onDisconnect,
   });
+  const { available: transcribeAvailable, userText, sendAudio } =
+    useUserTranscription(socketStatus === "connected");
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
       audioChunks.current.push(e.data);
@@ -277,13 +280,18 @@ export const Conversation:FC<ConversationProps> = ({
                 }
                 theme={theme}
               />
-              <UserAudio theme={theme}/>
+              <UserAudio theme={theme} onAudioChunk={sendAudio}/>
               <div className="pt-8 text-sm flex justify-center items-center flex-col download-links">
                 {audioURL && <div><a href={audioURL} download={`personaplex_audio.${getExtension("audio")}`} className="pt-2 text-center block">Download audio</a></div>}
               </div>
           </div>
           <div className="scrollbar player-text" ref={textContainerRef}>
             <TextDisplay containerRef={textContainerRef}/>
+            {transcribeAvailable && userText.length > 0 && (
+              <div className="player-text-user text-sm text-blue-700 mt-2">
+                <span className="font-semibold">You: </span>{userText.join("")}
+              </div>
+            )}
           </div>
           <div className="player-stats hidden md:block">
             <ServerAudioStats getAudioStats={getAudioStats} />
