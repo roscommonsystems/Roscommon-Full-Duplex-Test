@@ -70,9 +70,13 @@ async def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
         weight_repo = entry.get("moshi_weight_repo", repo)
         path = await _download_weight(weight_repo, weight_file)
         cmd += ["--moshi-weight", path]
-    # Models loaded on a base repo (or flagged) have no voices.tgz of their own;
-    # lend them the base model's voices.
-    if base_repo or entry.get("needs_shared_voices"):
+    # Voice prompts: a model may pin its own voice dir (e.g. pharma needs a .wav
+    # reference voice — the finetuned model rejects the base .pt voices). Otherwise
+    # models loaded on a base repo borrow the base model's voices.
+    voice_dir = entry.get("voice_prompt_dir")
+    if voice_dir:
+        cmd += ["--voice-prompt-dir", voice_dir]
+    elif base_repo or entry.get("needs_shared_voices"):
         vd = shared_voices_dir()
         if vd:
             cmd += ["--voice-prompt-dir", vd]

@@ -66,7 +66,7 @@ echo "HuggingFace reachable (HTTP 200)."
 
 log "Installing system dependencies (opus, portaudio, openssl)"
 apt-get update -qq || true
-apt-get install -y -qq libopus-dev libportaudio2 openssl
+apt-get install -y -qq libopus-dev libportaudio2 openssl ffmpeg
 
 log "Cloning PersonaPlex repository"
 if [ ! -d "$REPO_DIR/.git" ]; then
@@ -144,6 +144,24 @@ python -m venv --system-site-packages /venv/pharma
   'aiohttp>=3.10.5,<3.11'
 echo "Forked moshi venv ready. Verify on the box with:"
 echo "  /venv/pharma/bin/python -c \"import moshi, torch; print('cuda', torch.cuda.is_available())\""
+
+log "Provisioning pharma reference voice (.wav) — finetuned model rejects base .pt voices"
+# The finetuned pharma model only accepts a .wav reference voice (load_voice_prompt),
+# not the base model's .pt embeddings. Grab a clean, openly-licensed studio voice
+# (Kyutai tts-voices, CC-BY) and trim to ~12s mono. load_voice_prompt resamples to
+# 32 kHz itself; -ac 1 keeps it mono.
+PHARMA_VOICES="${PHARMA_VOICES:-/workspace/pharma_voices}"
+mkdir -p "$PHARMA_VOICES"
+if [ ! -f "$PHARMA_VOICES/pharma_voice.wav" ]; then
+  VOICE_SRC="https://huggingface.co/kyutai/tts-voices/resolve/main/expresso/ex01-ex02_default_001_channel1_168s.wav"
+  if curl -fsSL "$VOICE_SRC" -o /tmp/pharma_voice_src.wav; then
+    ffmpeg -y -loglevel error -i /tmp/pharma_voice_src.wav -t 12 -ac 1 "$PHARMA_VOICES/pharma_voice.wav"
+    rm -f /tmp/pharma_voice_src.wav
+    echo "Pharma voice ready at $PHARMA_VOICES/pharma_voice.wav"
+  else
+    echo "WARNING: could not download the pharma reference voice; pharma will be silent until one is placed at $PHARMA_VOICES/pharma_voice.wav"
+  fi
+fi
 
 log "Installing Node.js (to build the web client)"
 if ! command -v node >/dev/null 2>&1; then

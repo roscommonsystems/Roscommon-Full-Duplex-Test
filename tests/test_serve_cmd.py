@@ -87,3 +87,25 @@ async def test_build_cmd_defaults_to_sys_executable():
     assert cmd[0] == sys.executable
     # stock models must NOT get the forked-only --device override
     assert "--device" not in cmd
+
+
+async def test_build_cmd_uses_entry_voice_prompt_dir(monkeypatch):
+    # A model can pin its own voice dir (pharma needs a .wav voice, not base .pt).
+    reg = ModelRegistry([{
+        "id": "demegire/personaplex-finetune-pharma",
+        "name": "Pharma",
+        "base_repo": "nvidia/personaplex-7b-v1",
+        "moshi_weight_file": "merged_step448/model.safetensors",
+        "voice_prompt_dir": "/workspace/pharma_voices",
+    }])
+
+    async def fake_dl(weight_repo, weight_file):
+        return "/cache/model.safetensors"
+
+    monkeypatch.setattr(serve, "_download_weight", fake_dl)
+    # the pinned dir must win over the base shared-voices fallback
+    monkeypatch.setattr(serve, "shared_voices_dir", lambda: "/base/voices")
+    cmd = await serve.build_moshi_cmd(
+        "demegire/personaplex-finetune-pharma", 8999, registry=reg
+    )
+    assert cmd[cmd.index("--voice-prompt-dir") + 1] == "/workspace/pharma_voices"
