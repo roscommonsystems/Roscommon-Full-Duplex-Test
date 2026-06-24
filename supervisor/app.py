@@ -30,6 +30,11 @@ async def handle_status(request):
     return web.json_response(_status_payload(registry, child))
 
 
+async def handle_scenarios(request):
+    store = request.app.get("_scenarios")
+    return web.json_response(store.scenarios if store else [])
+
+
 async def handle_select(request):
     registry = request.app["_registry"]
     child = request.app["_child"]
@@ -143,14 +148,16 @@ async def _on_cleanup(app):
         await sess.close()
 
 
-def create_app(registry, child, static_dir=None, asr=None):
+def create_app(registry, child, static_dir=None, asr=None, scenarios=None):
     app = web.Application()
     app["_registry"] = registry
     app["_child"] = child
     app["_asr"] = asr
+    app["_scenarios"] = scenarios
     app["_static_dir"] = os.path.abspath(static_dir) if static_dir else None
     app.router.add_get("/api/models", handle_models)
     app.router.add_get("/api/status", handle_status)
+    app.router.add_get("/api/scenarios", handle_scenarios)
     app.router.add_post("/api/select", handle_select)
     app.router.add_get("/api/teardown/available", handle_teardown_available)
     app.router.add_post("/api/teardown", handle_teardown)

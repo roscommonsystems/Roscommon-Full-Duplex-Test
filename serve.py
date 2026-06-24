@@ -118,6 +118,10 @@ def main():
     if not registry.has(args.hf_repo):
         sys.exit(f"ERROR: --hf-repo {args.hf_repo} is not in models.json")
 
+    from supervisor.scenarios import ScenarioStore
+    scenarios_path = os.path.join(ROOT, "scenarios.json")
+    scenarios = ScenarioStore.from_file(scenarios_path) if os.path.isfile(scenarios_path) else None
+
     builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload, registry=registry)
     child = ChildManager(builder, port=args.child_port)
 
@@ -126,7 +130,7 @@ def main():
     if asr_cmd and not args.no_asr:
         asr = AsrChild(shlex.split(asr_cmd), port=args.asr_port)
 
-    app = create_app(registry, child, static_dir=args.static, asr=asr)
+    app = create_app(registry, child, static_dir=args.static, asr=asr, scenarios=scenarios)
 
     async def _boot(app):
         # Pre-load the default model before accepting conversations.
