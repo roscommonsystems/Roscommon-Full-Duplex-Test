@@ -120,7 +120,7 @@ uv pip install \
 # in the moshi deps block (pinned >=3.10.5,<3.11) — no separate install needed.
 
 log "Installing faster-whisper (+ CUDA libs for GPU; isolated from moshi's torch)"
-uv pip install faster-whisper nvidia-cublas-cu12 nvidia-cudnn-cu12
+uv pip install faster-whisper onnxruntime nvidia-cublas-cu12 nvidia-cudnn-cu12
 
 log "Installing Node.js (to build the web client)"
 if ! command -v node >/dev/null 2>&1; then

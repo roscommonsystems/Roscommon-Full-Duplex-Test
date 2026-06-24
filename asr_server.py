@@ -55,7 +55,15 @@ async def main():
     window = int(args.window_sec * ASR_RATE)
 
     def transcribe_pcm(pcm16):
-        segments, _ = model.transcribe(pcm16, language="en", beam_size=1)
+        # vad_filter drops silence (Whisper hallucinates "thank you"/"..." on it);
+        # condition_on_previous_text=False stops cross-window repetition loops.
+        segments, _ = model.transcribe(
+            pcm16,
+            language="en",
+            beam_size=1,
+            vad_filter=True,
+            condition_on_previous_text=False,
+        )
         return " ".join(s.text.strip() for s in segments).strip()
 
     async def handle(request):
