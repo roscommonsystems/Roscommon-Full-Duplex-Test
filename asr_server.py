@@ -2,13 +2,14 @@
 """asr_server.py — user-speech transcription server for the "You:" transcript.
 
 Serves a /api/transcribe WebSocket that receives the SAME opus audio frames the
-client sends to moshi, decodes them to PCM with sphn (exactly like moshi's
-server), and transcribes fixed ~2.5s windows with faster-whisper, emitting the
-recognized text as WS text frames.
+client sends to moshi, decodes them to PCM with sphn (like moshi's server), and
+transcribes fixed ~2.5s windows with faster-whisper, emitting recognized text
+as WS text frames.
 
-Windowed (not frame-level streaming), but accurate and robust. faster-whisper
-(CTranslate2) is isolated from moshi's torch build, so installing/running it
-cannot break the Blackwell GPU. Falls back to CPU if CUDA isn't usable.
+faster-whisper (CTranslate2) is isolated from moshi's torch build, so it cannot
+break the GPU; it falls back to CPU if CUDA isn't usable. Decoding runs on the
+recv path; transcription runs in a background task so a slow transcribe never
+starves the opus decoder.
 
 Usage: python asr_server.py --port 8997 [--model base.en] [--device cuda]
 """
@@ -25,8 +26,6 @@ ASR_RATE = 16000     # faster-whisper expects 16 kHz mono float32
 
 
 def load_model(model_name, device):
-    """Load faster-whisper, validating the device with a tiny transcribe so a
-    broken CUDA setup falls back to CPU at startup (not mid-conversation)."""
     attempts = [(device, "int8_float16"), ("cpu", "int8")] if device != "cpu" else [("cpu", "int8")]
     last = None
     for dev, ctype in attempts:
@@ -70,17 +69,47 @@ async def main():
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         reader = sphn.OpusStreamReader(SAMPLE_RATE)
-        buf = np.zeros(0, dtype=np.float32)
-        async for msg in ws:
-            if msg.type == web.WSMsgType.BINARY:
-                pcm = reader.append_bytes(msg.data)
-                if pcm is not None and len(pcm):
-                    buf = np.concatenate([buf, np.asarray(pcm, dtype=np.float32)])
-                while len(buf) >= window:
-                    chunk, buf = buf[:window], buf[window:]
-                    text = await loop.run_in_executor(None, transcribe_pcm, chunk)
-                    if text:
+        chunks = []          # decoded PCM pieces awaiting transcription
+        diag = {"logged": False}
+
+        async def transcriber():
+            acc = np.zeros(0, dtype=np.float32)
+            while not ws.closed:
+                await asyncio.sleep(0.25)
+                if chunks:
+                    acc = np.concatenate([acc] + chunks)
+                    chunks.clear()
+                while len(acc) >= window:
+                    piece, acc = acc[:window], acc[window:]
+                    try:
+                        text = await loop.run_in_executor(None, transcribe_pcm, piece)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"transcribe error: {e}", flush=True)
+                        continue
+                    if text and not ws.closed:
                         await ws.send_str(text)
+
+        task = asyncio.ensure_future(transcriber())
+        try:
+            async for msg in ws:
+                if msg.type != web.WSMsgType.BINARY:
+                    continue
+                data = bytes(msg.data)
+                if not diag["logged"]:
+                    print(f"asr first frame: len={len(data)} head={data[:8].hex()}", flush=True)
+                    diag["logged"] = True
+                # tolerate a stray 1-byte kind prefix before the Ogg stream
+                if len(data) >= 5 and data[0] == 1 and data[1:5] == b"OggS":
+                    data = data[1:]
+                try:
+                    pcm = reader.append_bytes(data)
+                except Exception as e:  # noqa: BLE001
+                    print(f"opus append error: {e} (head={data[:8].hex()})", flush=True)
+                    continue
+                if pcm is not None and len(pcm):
+                    chunks.append(np.asarray(pcm, dtype=np.float32))
+        finally:
+            task.cancel()
         return ws
 
     app = web.Application()
