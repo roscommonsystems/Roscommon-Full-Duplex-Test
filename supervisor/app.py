@@ -65,12 +65,23 @@ async def handle_teardown(request):
     return web.json_response(result, status=200)
 
 
-async def _proxy_ws(request):
-    child = request.app["_child"]
+async def handle_transcribe_available(request):
+    asr = request.app.get("_asr")
+    return web.json_response({"available": bool(asr and asr.available)})
+
+
+async def handle_transcribe(request):
+    asr = request.app.get("_asr")
+    if not (asr and asr.available):
+        return web.json_response({"error": "transcription unavailable"}, status=503)
+    return await _proxy_ws(request, asr.port)
+
+
+async def _proxy_ws(request, target_port):
     session = request.app["_client_session"]
     ws_server = web.WebSocketResponse()
     await ws_server.prepare(request)
-    target = f"ws://127.0.0.1:{child.port}{request.rel_url}"
+    target = f"ws://127.0.0.1:{target_port}{request.rel_url}"
     try:
         async with session.ws_connect(target) as ws_client:
             async def pump(src, dst):
@@ -95,7 +106,7 @@ async def handle_proxy(request):
     if getattr(child, "state", "ready") != "ready":
         return web.json_response({"error": "model not ready"}, status=503)
     if request.headers.get("Upgrade", "").lower() == "websocket":
-        return await _proxy_ws(request)
+        return await _proxy_ws(request, child.port)
     session = request.app["_client_session"]
     target = f"http://127.0.0.1:{child.port}{request.rel_url}"
     data = await request.read()
@@ -132,16 +143,19 @@ async def _on_cleanup(app):
         await sess.close()
 
 
-def create_app(registry, child, static_dir=None):
+def create_app(registry, child, static_dir=None, asr=None):
     app = web.Application()
     app["_registry"] = registry
     app["_child"] = child
+    app["_asr"] = asr
     app["_static_dir"] = os.path.abspath(static_dir) if static_dir else None
     app.router.add_get("/api/models", handle_models)
     app.router.add_get("/api/status", handle_status)
     app.router.add_post("/api/select", handle_select)
     app.router.add_get("/api/teardown/available", handle_teardown_available)
     app.router.add_post("/api/teardown", handle_teardown)
+    app.router.add_get("/api/transcribe/available", handle_transcribe_available)
+    app.router.add_get("/api/transcribe", handle_transcribe)
     app.router.add_route("*", "/api/{tail:.*}", handle_proxy)
     app.router.add_get("/{tail:.*}", handle_static)
     app.on_startup.append(_on_startup)
