@@ -56,7 +56,8 @@ async def build_moshi_cmd(repo, port, cpu_offload=False, registry=None):
     entry = (registry.get(repo) if registry else None) or {}
     base_repo = entry.get("base_repo")
     hf_repo = base_repo or repo
-    cmd = [sys.executable, "-m", "moshi.server",
+    launcher = entry.get("server_python") or sys.executable
+    cmd = [launcher, "-m", "moshi.server",
            "--host", "127.0.0.1", "--port", str(port), "--hf-repo", hf_repo]
     if cpu_offload:
         cmd.append("--cpu-offload")

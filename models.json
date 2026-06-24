@@ -14,6 +14,8 @@
     "name": "PersonaPlex Pharma",
     "description": "Pharma patient-support / medication-adherence fine-tune of the base model.",
     "base_repo": "nvidia/personaplex-7b-v1",
-    "moshi_weight_file": "merged_step448/model.safetensors"
+    "moshi_weight_file": "merged_step448/model.safetensors",
+    "server_python": "/venv/pharma/bin/python",
+    "supports_scenarios": true
   }
 ]
