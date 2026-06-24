@@ -70,7 +70,6 @@ async def main():
         await ws.prepare(request)
         reader = sphn.OpusStreamReader(SAMPLE_RATE)
         chunks = []          # decoded PCM pieces awaiting transcription
-        diag = {"logged": False}
 
         async def transcriber():
             acc = np.zeros(0, dtype=np.float32)
@@ -94,17 +93,13 @@ async def main():
             async for msg in ws:
                 if msg.type != web.WSMsgType.BINARY:
                     continue
-                data = bytes(msg.data)
-                if not diag["logged"]:
-                    print(f"asr first frame: len={len(data)} head={data[:8].hex()}", flush=True)
-                    diag["logged"] = True
-                # tolerate a stray 1-byte kind prefix before the Ogg stream
-                if len(data) >= 5 and data[0] == 1 and data[1:5] == b"OggS":
-                    data = data[1:]
+                # sphn API (this version): feed with append_bytes, then drain
+                # decoded PCM with read_pcm(). Draining keeps the decoder alive.
                 try:
-                    pcm = reader.append_bytes(data)
+                    reader.append_bytes(bytes(msg.data))
+                    pcm = reader.read_pcm()
                 except Exception as e:  # noqa: BLE001
-                    print(f"opus append error: {e} (head={data[:8].hex()})", flush=True)
+                    print(f"opus decode error: {e}", flush=True)
                     continue
                 if pcm is not None and len(pcm):
                     chunks.append(np.asarray(pcm, dtype=np.float32))
