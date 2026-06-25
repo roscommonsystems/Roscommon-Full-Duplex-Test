@@ -82,10 +82,12 @@ downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it
 
 > **About the Pharma model.** Selecting Pharma reveals a **Scenario** picker (a
 > medication-adherence call script) and runs on its own auto-provisioned backend.
-> It follows the scripted call and you can see it in the live transcript, but it
-> **does not speak** — the published fine-tune excludes the audio generator and trains
-> the agent toward silence, so this is a limitation of the upstream weights, not the
-> setup. For **spoken** demos use PersonaPlex (Original) or RL Seamless. Original is
+> It follows the scripted call and you can see it in the live transcript, but in this
+> live setup the agent does not speak. The fine-tune keeps the model's own audio
+> generator (it is frozen, not removed) but trains the agent to stay quiet around the
+> context injections, and the published talking demos are generated offline (bot to
+> bot) rather than live. So live real-time speech is an open engineering item, not a
+> config change. For **spoken** demos use PersonaPlex (Original) or RL Seamless. Original is
 > the best all-round model to show; RL Seamless has smoother turn-taking (its license
 > is non-commercial, internal/demo use only).
 
