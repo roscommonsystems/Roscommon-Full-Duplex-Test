@@ -80,6 +80,15 @@ downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it
 - **Shut down instance** (button at the bottom, only shown if `VAST_API_KEY` was set) —
   destroys the instance and stops billing when you're done. Use this after a demo.
 
+> **About the Pharma model.** Selecting Pharma reveals a **Scenario** picker (a
+> medication-adherence call script) and runs on its own auto-provisioned backend.
+> It follows the scripted call and you can see it in the live transcript, but it
+> **does not speak** — the published fine-tune excludes the audio generator and trains
+> the agent toward silence, so this is a limitation of the upstream weights, not the
+> setup. For **spoken** demos use PersonaPlex (Original) or RL Seamless. Original is
+> the best all-round model to show; RL Seamless has smoother turn-taking (its license
+> is non-commercial, internal/demo use only).
+
 ### Live transcription (the user's words) — optional
 
 The "You:" live transcript needs a second model (a streaming ASR) running
