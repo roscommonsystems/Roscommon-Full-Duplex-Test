@@ -12,6 +12,12 @@
   {
     "id": "demegire/personaplex-finetune-pharma",
     "name": "PersonaPlex Pharma",
-    "description": "Pharma patient-support / medication-adherence fine-tune of the base model."
+    "description": "Pharma patient-support / medication-adherence fine-tune of the base model.",
+    "base_repo": "nvidia/personaplex-7b-v1",
+    "moshi_weight_file": "merged_step448/model.safetensors",
+    "server_python": "/venv/pharma/bin/python",
+    "voice_prompt_dir": "/workspace/pharma_voices",
+    "voice_wav": "pharma_voice.wav",
+    "supports_scenarios": true
   }
 ]

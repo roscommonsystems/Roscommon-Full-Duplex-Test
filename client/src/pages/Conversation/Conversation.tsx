@@ -10,6 +10,9 @@ import { TextDisplay } from "./components/TextDisplay/TextDisplay";
 import { MediaContext } from "./MediaContext";
 import { ServerInfo } from "./components/ServerInfo/ServerInfo";
 import { ModelParamsValues, useModelParams } from "./hooks/useModelParams";
+import { useTranscript } from "./hooks/useTranscript";
+import { useInjectionScheduler } from "./hooks/useInjectionScheduler";
+import { Injection } from "../Queue/hooks/useScenarios";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { type ThemeType } from "./hooks/useSystemTheme";
@@ -26,6 +29,9 @@ type ConversationProps = {
   onConversationEnd?: () => void;
   isBypass?: boolean;
   startConnection: () => Promise<void>;
+  modelName?: string | null;
+  injections?: Injection[];
+  voiceOverride?: string;
 } & Partial<ModelParamsValues>;
 
 
@@ -36,6 +42,7 @@ const buildURL = ({
   email,
   textSeed,
   audioSeed,
+  voiceOverride,
 }: {
   workerAddr: string;
   params: ModelParamsValues;
@@ -43,6 +50,7 @@ const buildURL = ({
   email?: string;
   textSeed: number;
   audioSeed: number;
+  voiceOverride?: string;
 }) => {
   const newWorkerAddr = useMemo(() => {
     if (workerAddr == "same" || workerAddr == "") {
@@ -70,7 +78,7 @@ const buildURL = ({
   url.searchParams.append("repetition_penalty_context", params.repetitionPenaltyContext.toString());
   url.searchParams.append("repetition_penalty", params.repetitionPenalty.toString());
   url.searchParams.append("text_prompt", params.textPrompt.toString());
-  url.searchParams.append("voice_prompt", params.voicePrompt.toString());
+  url.searchParams.append("voice_prompt", (voiceOverride || params.voicePrompt).toString());
   console.log(url.toString());
   return url.toString();
 };
@@ -88,6 +96,9 @@ export const Conversation:FC<ConversationProps> = ({
   isBypass=false,
   email,
   theme,
+  modelName,
+  injections,
+  voiceOverride,
   ...params
 }) => {
   const getAudioStats = useRef<() => AudioStats>(() => ({
@@ -120,6 +131,7 @@ export const Conversation:FC<ConversationProps> = ({
     email: email,
     textSeed: textSeed,
     audioSeed: audioSeed,
+    voiceOverride,
   });
 
   const onDisconnect = useCallback(() => {
@@ -133,6 +145,8 @@ export const Conversation:FC<ConversationProps> = ({
     uri: WSURL,
     onDisconnect,
   });
+  const { turns } = useTranscript(socket);
+  useInjectionScheduler({ socket, socketStatus, injections });
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
       audioChunks.current.push(e.data);
@@ -251,6 +265,11 @@ export const Conversation:FC<ConversationProps> = ({
           </Button>
           <div className={`h-4 w-4 rounded-full ${socketColor}`} />
         </div>
+        {modelName && (
+          <p className="text-center text-xs text-gray-500 mt-2">
+            Model: <span className="font-medium">{modelName}</span>
+          </p>
+        )}
         {audioContext.current && worklet.current && <MediaContext.Provider value={
           {
             startRecording,
@@ -276,7 +295,7 @@ export const Conversation:FC<ConversationProps> = ({
               </div>
           </div>
           <div className="scrollbar player-text" ref={textContainerRef}>
-            <TextDisplay containerRef={textContainerRef}/>
+            <TextDisplay containerRef={textContainerRef} turns={turns}/>
           </div>
           <div className="player-stats hidden md:block">
             <ServerAudioStats getAudioStats={getAudioStats} />

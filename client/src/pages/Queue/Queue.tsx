@@ -7,6 +7,9 @@ import { Button } from "../../components/Button/Button";
 import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
+import { useModels, ModelInfo, Status } from "./hooks/useModels";
+import { useScenarios, Scenario } from "./hooks/useScenarios";
+import { useTeardown } from "./hooks/useTeardown";
 
 // Voice presets with human-readable descriptions.
 // "Natural" voices are tuned for warm, conversational delivery; "Variety"
@@ -59,6 +62,19 @@ interface HomepageProps {
   setTextPrompt: (value: string) => void;
   voicePrompt: string;
   setVoicePrompt: (value: string) => void;
+  models: ModelInfo[];
+  selectedRepo: string;
+  setSelectedRepo: (value: string) => void;
+  scenarios: Scenario[];
+  selectedScenarioId: string;
+  setSelectedScenarioId: (value: string) => void;
+  showScenarios: boolean;
+  showVoice: boolean;
+  loadedName: string | null;
+  switchError: string | null;
+  teardownAvailable: boolean;
+  onTeardown: () => void;
+  teardownError: string | null;
 }
 
 const Homepage = ({
@@ -68,14 +84,20 @@ const Homepage = ({
   setTextPrompt,
   voicePrompt,
   setVoicePrompt,
+  models,
+  selectedRepo,
+  setSelectedRepo,
+  scenarios,
+  selectedScenarioId,
+  setSelectedScenarioId,
+  showScenarios,
+  showVoice,
+  loadedName,
+  switchError,
+  teardownAvailable,
+  onTeardown,
+  teardownError,
 }: HomepageProps) => {
-  const [modelName, setModelName] = useState<string>("");
-  useEffect(() => {
-    fetch("./config.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.modelName) setModelName(d.modelName); })
-      .catch(() => {});
-  }, []);
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
       <div className="mb-6">
@@ -83,9 +105,9 @@ const Homepage = ({
         <p className="text-sm text-gray-600 mt-2">
           Full duplex conversational AI with text and voice control.
         </p>
-        {modelName && (
+        {loadedName && (
           <p className="text-xs text-gray-500 mt-1">
-            Model: <span className="font-medium">{modelName}</span>
+            Loaded: <span className="font-medium">{loadedName}</span>
           </p>
         )}
       </div>
@@ -124,6 +146,45 @@ const Homepage = ({
         </div>
 
         <div className="w-full">
+          <label htmlFor="model-select" className="block text-left text-base font-medium text-gray-700 mb-2">
+            Model:
+          </label>
+          <select
+            id="model-select"
+            value={selectedRepo}
+            onChange={(e) => setSelectedRepo(e.target.value)}
+            className="w-full p-3 bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {showScenarios && (
+          <div className="w-full">
+            <label htmlFor="scenario-select" className="block text-left text-base font-medium text-gray-700 mb-2">
+              Scenario (pharma demo):
+            </label>
+            <select
+              id="scenario-select"
+              value={selectedScenarioId}
+              onChange={(e) => setSelectedScenarioId(e.target.value)}
+              className="w-full p-3 bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
+            >
+              <option value="">No scenario (free conversation)</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <p className="text-left text-xs text-gray-500 mt-1">
+              Demo only — not clinically accurate.
+            </p>
+          </div>
+        )}
+
+        {showVoice && (
+        <div className="w-full">
           <label htmlFor="voice-prompt" className="block text-left text-base font-medium text-gray-700 mb-2">
             Voice:
           </label>
@@ -140,14 +201,32 @@ const Homepage = ({
               </option>
             ))}
           </select>
-      </div>
+        </div>
+        )}
 
         {showMicrophoneAccessMessage && (
           <p className="text-center text-red-500">Please enable your microphone before proceeding</p>
         )}
-        
+
+        {switchError && <p className="text-center text-red-500">{switchError}</p>}
+
         <Button onClick={async () => await startConnection()}>Connect</Button>
-    </div>
+
+        {teardownAvailable && (
+          <div className="mt-10 flex flex-col items-center">
+            {teardownError && (
+              <p className="text-center text-red-500 mb-2 text-sm">{teardownError}</p>
+            )}
+            <button
+              type="button"
+              onClick={onTeardown}
+              className="px-3 py-1 text-xs text-gray-400 hover:text-red-600 underline focus:outline-none"
+            >
+              Shut down instance
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -159,6 +238,34 @@ export const Queue:FC = () => {
   const [hasMicrophoneAccess, setHasMicrophoneAccess] = useState<boolean>(false);
   const [showMicrophoneAccessMessage, setShowMicrophoneAccessMessage] = useState<boolean>(false);
   const modelParams = useModelParams();
+  const { models, status, refreshStatus } = useModels();
+  const { scenarios } = useScenarios();
+  const [selectedRepo, setSelectedRepo] = useState<string>("");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
+  const selectedModel = models.find((m) => m.id === selectedRepo);
+  const showScenarios = !!selectedModel?.supports_scenarios && scenarios.length > 0;
+  const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId);
+  // Models that pin their own voice (pharma's .wav) hide the .pt voice dropdown.
+  const showVoice = !selectedModel?.voice_wav;
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const { available: teardownAvailable, teardown } = useTeardown();
+  const [destroyed, setDestroyed] = useState(false);
+  const [teardownError, setTeardownError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
+  }, [status, selectedRepo]);
+
+  const handleTeardown = useCallback(async () => {
+    if (!window.confirm("Destroy this instance? This stops billing and ends the demo.")) return;
+    setTeardownError(null);
+    const res = await teardown();
+    if (res.ok) setDestroyed(true);
+    else setTeardownError(res.error || "Shutdown failed.");
+  }, [teardown]);
+
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const audioContext = useRef<AudioContext | null>(null);
   const worklet = useRef<AudioWorkletNode | null>(null);
@@ -217,6 +324,98 @@ export const Queue:FC = () => {
     }
   }, [startProcessor, getMicrophoneAccess]);
 
+  // Poll /api/status until the supervisor settles on "ready" or "error".
+  // Returns the final status, or null if the connection was lost or we unmounted.
+  const pollUntilSettled = useCallback(async (): Promise<Status | null> => {
+    let nullCount = 0;
+    for (;;) {
+      if (!mountedRef.current) return null;
+      await new Promise((res) => setTimeout(res, 2000));
+      const st = await refreshStatus();
+      if (!mountedRef.current) return null;
+      if (st === null) {
+        nullCount += 1;
+        if (nullCount >= 5) return null;
+        continue;
+      }
+      nullCount = 0;
+      if (st.state === "ready" || st.state === "error") return st;
+    }
+  }, [refreshStatus]);
+
+  const ensureModelLoaded = useCallback(async (): Promise<boolean> => {
+    if (!selectedRepo) {
+      setSwitchError("Please select a model first.");
+      return false;
+    }
+    const s = await refreshStatus();
+    if (s && s.state === "ready" && s.current_repo === selectedRepo) return true;
+    setSwitching(true);
+    setSwitchError(null);
+    // Start (or wait out) a switch to the selected model. The supervisor only
+    // runs one switch at a time and returns 409 "busy" while another is in
+    // flight — so a 409 isn't a failure, it means "wait, then try again".
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const r = await fetch("/api/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: selectedRepo }),
+      });
+      if (r.status === 200) { setSwitching(false); return true; }
+      if (r.status === 202 || r.status === 409) {
+        const st = await pollUntilSettled();
+        if (!mountedRef.current) return false;
+        if (st === null) {
+          setSwitchError("Lost connection to the server while loading the model.");
+          setSwitching(false);
+          return false;
+        }
+        if (st.state === "ready" && st.current_repo === selectedRepo) {
+          setSwitching(false);
+          return true;
+        }
+        if (st.state === "error") {
+          setSwitchError(st.error || "Model failed to load.");
+          setSwitching(false);
+          return false;
+        }
+        // Settled on a different model (a 409'd switch finished) — retry ours.
+        continue;
+      }
+      // 400 (unknown repo) or anything unexpected.
+      setSwitchError("Could not start model switch.");
+      setSwitching(false);
+      return false;
+    }
+    setSwitchError("The model is taking too long to switch. Please try again.");
+    setSwitching(false);
+    return false;
+  }, [refreshStatus, pollUntilSettled, selectedRepo]);
+
+  const connect = useCallback(async () => {
+    const ok = await ensureModelLoaded();
+    if (ok) await startConnection();
+  }, [ensureModelLoaded, startConnection]);
+
+  if (destroyed) {
+    return (
+      <div className="text-center h-screen flex flex-col items-center justify-center gap-3">
+        <h1 className="text-2xl text-black">Instance destroyed — billing stopped.</h1>
+        <p className="text-sm text-gray-600">You can close this tab.</p>
+      </div>
+    );
+  }
+
+  if (switching) {
+    const name = models.find((m) => m.id === selectedRepo)?.name ?? selectedRepo;
+    return (
+      <div className="text-center h-screen flex flex-col items-center justify-center gap-3">
+        <h1 className="text-2xl text-black">Loading {name}…</h1>
+        <p className="text-sm text-gray-600">This takes ~45 seconds. Please wait.</p>
+      </div>
+    );
+  }
+
   return (
     <>
       {(hasMicrophoneAccess && audioContext.current && worklet.current) ? (
@@ -226,16 +425,32 @@ export const Queue:FC = () => {
         worklet={worklet as MutableRefObject<AudioWorkletNode|null>}
         theme={theme}
         startConnection={startConnection}
+        modelName={status?.display_name ?? null}
+        injections={selectedScenario?.injections}
+        voiceOverride={selectedModel?.voice_wav}
         {...modelParams}
         />
       ) : (
         <Homepage
-          startConnection={startConnection}
+          startConnection={connect}
           showMicrophoneAccessMessage={showMicrophoneAccessMessage}
           textPrompt={modelParams.textPrompt}
           setTextPrompt={modelParams.setTextPrompt}
           voicePrompt={modelParams.voicePrompt}
           setVoicePrompt={modelParams.setVoicePrompt}
+          models={models}
+          selectedRepo={selectedRepo}
+          setSelectedRepo={setSelectedRepo}
+          scenarios={scenarios}
+          selectedScenarioId={selectedScenarioId}
+          setSelectedScenarioId={setSelectedScenarioId}
+          showScenarios={showScenarios}
+          showVoice={showVoice}
+          loadedName={status?.display_name ?? null}
+          switchError={switchError}
+          teardownAvailable={teardownAvailable}
+          onTeardown={handleTeardown}
+          teardownError={teardownError}
         />
       )}
     </>
