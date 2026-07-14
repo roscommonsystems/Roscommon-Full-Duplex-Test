@@ -428,6 +428,8 @@ export const Queue:FC = () => {
         modelName={status?.display_name ?? null}
         injections={selectedScenario?.injections}
         voiceOverride={selectedModel?.voice_wav}
+        teardownAvailable={teardownAvailable}
+        onTeardown={handleTeardown}
         {...modelParams}
         />
       ) : (
