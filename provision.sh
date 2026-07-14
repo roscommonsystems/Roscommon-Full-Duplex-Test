@@ -66,7 +66,7 @@ echo "HuggingFace reachable (HTTP 200)."
 
 log "Installing system dependencies (opus, portaudio, openssl)"
 apt-get update -qq || true
-apt-get install -y -qq libopus-dev libportaudio2 openssl ffmpeg
+apt-get install -y -qq libopus-dev libportaudio2 openssl
 
 log "Cloning PersonaPlex repository"
 if [ ! -d "$REPO_DIR/.git" ]; then
@@ -121,47 +121,6 @@ uv pip install \
 
 log "Installing faster-whisper (+ CUDA libs for GPU; isolated from moshi's torch)"
 uv pip install faster-whisper onnxruntime nvidia-cublas-cu12 nvidia-cudnn-cu12
-
-log "Installing FORKED moshi for the pharma puppeteer model (isolated venv /venv/pharma)"
-# The pharma fine-tune needs the authors' forked moshi: it adds mid-call context
-# injection (LMGen.inject_context + a JSON 'context' channel in server.py) that
-# stock moshi lacks. We install it into a SEPARATE venv so it cannot clobber the
-# stock moshi the other two models use. --system-site-packages lets it reuse the
-# image's Blackwell-capable torch instead of reinstalling it.
-PP_FT_DIR="${PP_FT_DIR:-/workspace/pp-finetune}"
-if [ ! -d "$PP_FT_DIR/.git" ]; then
-  git clone --depth 1 --filter=blob:none --sparse \
-    https://github.com/emotion-machine-org/personaplex-finetune "$PP_FT_DIR"
-  git -C "$PP_FT_DIR" sparse-checkout set personaplex/moshi
-fi
-python -m venv --system-site-packages /venv/pharma
-# Install ONLY the forked moshi package (shadows stock moshi in THIS venv only),
-# preserving the inherited torch. Its non-torch deps match the stock pins.
-/venv/pharma/bin/pip install --no-deps "$PP_FT_DIR/personaplex/moshi"
-/venv/pharma/bin/pip install \
-  'numpy>=1.26,<2.2' 'safetensors>=0.4.0,<0.5' 'huggingface-hub>=0.24,<0.25' \
-  'einops==0.7' 'sentencepiece==0.2' 'sounddevice==0.5' 'sphn>=0.1.4,<0.2' \
-  'aiohttp>=3.10.5,<3.11' 'pyloudnorm'
-echo "Forked moshi venv ready. Verify on the box with:"
-echo "  /venv/pharma/bin/python -c \"import moshi, torch; print('cuda', torch.cuda.is_available())\""
-
-log "Provisioning pharma reference voice (.wav) — finetuned model rejects base .pt voices"
-# The finetuned pharma model only accepts a .wav reference voice (load_voice_prompt),
-# not the base model's .pt embeddings. Grab a clean, openly-licensed studio voice
-# (Kyutai tts-voices, CC-BY) and trim to ~12s mono. load_voice_prompt resamples to
-# 32 kHz itself; -ac 1 keeps it mono.
-PHARMA_VOICES="${PHARMA_VOICES:-/workspace/pharma_voices}"
-mkdir -p "$PHARMA_VOICES"
-if [ ! -f "$PHARMA_VOICES/pharma_voice.wav" ]; then
-  VOICE_SRC="https://huggingface.co/kyutai/tts-voices/resolve/main/expresso/ex01-ex02_default_001_channel1_168s.wav"
-  if curl -fsSL "$VOICE_SRC" -o /tmp/pharma_voice_src.wav; then
-    ffmpeg -y -loglevel error -i /tmp/pharma_voice_src.wav -t 12 -ac 1 "$PHARMA_VOICES/pharma_voice.wav"
-    rm -f /tmp/pharma_voice_src.wav
-    echo "Pharma voice ready at $PHARMA_VOICES/pharma_voice.wav"
-  else
-    echo "WARNING: could not download the pharma reference voice; pharma will be silent until one is placed at $PHARMA_VOICES/pharma_voice.wav"
-  fi
-fi
 
 log "Installing Node.js (to build the web client)"
 if ! command -v node >/dev/null 2>&1; then
