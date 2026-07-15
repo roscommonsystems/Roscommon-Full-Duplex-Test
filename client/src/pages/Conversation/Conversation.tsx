@@ -32,6 +32,8 @@ type ConversationProps = {
   modelName?: string | null;
   injections?: Injection[];
   voiceOverride?: string;
+  teardownAvailable?: boolean;
+  onTeardown?: () => void;
 } & Partial<ModelParamsValues>;
 
 
@@ -99,6 +101,8 @@ export const Conversation:FC<ConversationProps> = ({
   modelName,
   injections,
   voiceOverride,
+  teardownAvailable,
+  onTeardown,
   ...params
 }) => {
   const getAudioStats = useRef<() => AudioStats>(() => ({
@@ -269,6 +273,17 @@ export const Conversation:FC<ConversationProps> = ({
           <p className="text-center text-xs text-gray-500 mt-2">
             Model: <span className="font-medium">{modelName}</span>
           </p>
+        )}
+        {teardownAvailable && (
+          <div className="text-center mt-2">
+            <button
+              type="button"
+              onClick={onTeardown}
+              className="px-3 py-1 text-xs text-gray-400 hover:text-red-600 underline focus:outline-none"
+            >
+              Shut down instance
+            </button>
+          </div>
         )}
         {audioContext.current && worklet.current && <MediaContext.Provider value={
           {
