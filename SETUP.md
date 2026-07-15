@@ -3,6 +3,9 @@
 How to stand up the PersonaPlex demo on a vast.ai GPU and open the web UI.
 Anyone on the team should be able to follow this unaided.
 
+The demo ships two models: **PersonaPlex (Original)** and **PersonaPlex RL Seamless**,
+both selectable from the in-UI model dropdown.
+
 ---
 
 ## 1. One-time prerequisites
@@ -12,7 +15,6 @@ Anyone on the team should be able to follow this unaided.
 2. **Accept the model licenses** (open each, click agree):
    - https://huggingface.co/nvidia/personaplex-7b-v1 (base)
    - https://huggingface.co/kyutai/personaplex-rl-seamless (RL seamless)
-   - https://huggingface.co/demegire/personaplex-finetune-pharma (pharma)
 3. Create a **READ token**: https://huggingface.co/settings/tokens → this is your `HF_TOKEN`.
 
 ### vast.ai (per person)
@@ -30,7 +32,9 @@ This repo is **private**, so the instance needs read access to clone it. Create 
 ## 2. Rent the GPU
 
 In the vast.ai console, pick an offer with:
-- **GPU:** RTX 4090 (24 GB) or RTX 5090 (32 GB). The model uses ~19.5 GB VRAM.
+- **GPU: RTX 5090 (32 GB) is the default and recommended card.** The model uses
+  ~19.5 GB and the live transcription (ASR) adds a few GB, so 32 GB is the practical
+  minimum. A 24 GB card (e.g. RTX 4090) works only if you disable transcription.
 - **A `datacenter:` offer** (not a plain `host:` one — many host machines have
   firewalled outbound internet and can't download the model; the script egress-tests
   and will tell you to swap if it lands on a bad one).
@@ -74,30 +78,21 @@ downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it
    **Advanced → Proceed**, then **Allow microphone**.
 
 ### Using it
-- **Model dropdown** — pick PersonaPlex (Original), RL Seamless, or Pharma. Switching
-  to a different model reloads it (~45 s; you'll see a "Loading…" screen).
+- **Model dropdown** — pick PersonaPlex (Original) or RL Seamless. Switching to a
+  different model reloads it (~45 s; you'll see a "Loading…" screen). Original is the
+  best all-round model to show; RL Seamless has smoother turn-taking (its license is
+  non-commercial, internal/demo use only).
 - **Text Prompt / Voice** — set the persona and voice, then **Connect** and talk.
 - **Shut down instance** (button at the bottom, only shown if `VAST_API_KEY` was set) —
   destroys the instance and stops billing when you're done. Use this after a demo.
 
-> **About the Pharma model.** Selecting Pharma reveals a **Scenario** picker (a
-> medication-adherence call script) and runs on its own auto-provisioned backend.
-> It follows the scripted call and you can see it in the live transcript, but in this
-> live setup the agent does not speak. The fine-tune keeps the model's own audio
-> generator (it is frozen, not removed) but trains the agent to stay quiet around the
-> context injections, and the published talking demos are generated offline (bot to
-> bot) rather than live. So live real-time speech is an open engineering item, not a
-> config change. For **spoken** demos use PersonaPlex (Original) or RL Seamless. Original is
-> the best all-round model to show; RL Seamless has smoother turn-taking (its license
-> is non-commercial, internal/demo use only).
+### Live transcription (the user's words)
 
-### Live transcription (the user's words) — optional
+The "You:" live transcript runs a second model (a streaming ASR) alongside
+PersonaPlex, which is why 32 GB is the practical minimum:
 
-The "You:" live transcript needs a second model (a streaming ASR) running
-alongside PersonaPlex, which raises the VRAM requirement:
-
-- PersonaPlex ~19.5 GB + ASR ~2–6 GB ⇒ use a **32 GB GPU minimum, 48 GB
-  recommended** (e.g. the RTX PRO 5000). On a 24 GB card, omit it.
+- PersonaPlex ~19.5 GB + ASR ~2–6 GB fits comfortably on the default **RTX 5090
+  (32 GB)** (confirmed running with GPU ASR). On a 24 GB card, omit it.
 - Enabled by the `ASR_CMD` env var (the ASR server's launch command). If `ASR_CMD`
   is unset, the app runs normally and the transcript shows only the model's side.
 

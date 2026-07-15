@@ -18,7 +18,9 @@ The whole setup is automated by [`provision.sh`](./provision.sh).
 
 ## Renting the GPU
 
-- A single **RTX 4090 (24 GB)** or **RTX 5090 (32 GB)** is enough (model uses ~19.5 GB VRAM).
+- **RTX 5090 (32 GB) is the default and recommended GPU.** The model uses ~19.5 GB and
+  the live transcription (ASR) adds a few GB, so 32 GB is the practical minimum. A 24 GB
+  RTX 4090 works only if you disable transcription.
 - **Rent a `datacenter:` offer, not a plain `host:` one.** Many hobbyist `host:`
   machines have firewalled outbound internet and cannot download the model from
   Hugging Face. `provision.sh` egress-tests before doing anything and will tell you
