@@ -180,6 +180,36 @@ bash /workspace/run_moshi.sh     # restart the server only
 
 ---
 
+## Running the tests
+
+No GPU needed — the suite stubs out the model and ASR subprocesses, so it runs on a
+laptop in about 30 seconds.
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+
+CI ([`.github/workflows/tests.yml`](./.github/workflows/tests.yml)) runs exactly that on
+every push to `main` and every PR. Installing the full runtime is deliberate: it doubles
+as the check that `requirements.txt` still resolves, so a broken pin fails in CI rather
+than halfway through provisioning a rented GPU.
+
+### One requirements file, on purpose
+
+`requirements.txt` carries the test packages next to the runtime ones. Both are pure
+Python and constrain none of the runtime pins, so the few MB `provision.sh` adds on the
+GPU host buys a single dependency file.
+
+Keep it that way: **a test package that pins a runtime library does not belong here.**
+The suite used to need `pytest-aiohttp`, stuck at `<1.1` because 1.1+ requires
+`aiohttp>=3.11` while `moshi` forces `aiohttp<3.11` — a test tool held hostage by a
+runtime pin, on the file that provisions a paid GPU. Its two fixtures now live in
+[`tests/conftest.py`](./tests/conftest.py), built on `aiohttp.test_utils` from aiohttp
+itself.
+
+---
+
 ## How `provision.sh` works
 
 1. Verifies `HF_TOKEN` is set.
@@ -187,7 +217,8 @@ bash /workspace/run_moshi.sh     # restart the server only
 3. Installs system deps (`libopus-dev`, `libportaudio2`).
 4. Clones the [PersonaPlex repo](https://github.com/NVIDIA/personaplex).
 5. Installs `moshi` with `--no-deps`, then adds its other deps — see note below.
-6. Installs the app's own deps from `requirements.txt` (aiohttp, faster-whisper, …).
+6. Installs the app's deps from `requirements.txt` (aiohttp, faster-whisper, … plus the
+   test packages — see [Running the tests](#running-the-tests)).
 7. Sanity-checks that torch sees the GPU.
 8. Launches the Moshi server in a `tmux` session on `0.0.0.0:8998`.
 9. Waits for the model to load, then prints the public URL.
