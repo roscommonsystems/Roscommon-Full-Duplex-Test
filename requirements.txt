@@ -1,4 +1,4 @@
-# Runtime dependencies for serve.py, supervisor/ and asr_server.py.
+# Dependencies for serve.py, supervisor/ and asr_server.py, plus the tests.
 #
 # The pins mirror what provision.sh installs for moshi. moshi is installed with
 # --no-deps to preserve the image's Blackwell-capable torch, so the packages we
@@ -15,3 +15,11 @@ numpy>=1.26,<2.2
 faster-whisper
 # faster-whisper's vad_filter=True path
 onnxruntime
+
+# Test-only, kept here rather than in a separate requirements-dev.txt: both are
+# pure Python and constrain none of the pins above, so provision.sh installing
+# them on the GPU host costs a few MB and nothing else. Keep it that way --
+# anything version-coupled to the runtime does not belong here. See
+# tests/conftest.py for why pytest-aiohttp, the last such package, is gone.
+pytest>=8.0
+pytest-asyncio>=1.0

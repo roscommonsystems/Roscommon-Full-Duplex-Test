@@ -15,16 +15,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+          cache-dependency-path: requirements.txt
 
-      # Both files: the tests import aiohttp, which is a runtime dep. Installing
-      # the runtime here is also deliberate -- it is the check that
-      # requirements.txt still resolves, so a broken pin fails here instead of
-      # halfway through provisioning a rented GPU.
+      # This is also the check that requirements.txt still resolves, so a broken
+      # pin fails here instead of halfway through provisioning a rented GPU.
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt
 
       - name: Run tests
         run: pytest -q
