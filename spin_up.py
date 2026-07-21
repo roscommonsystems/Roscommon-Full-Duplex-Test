@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """spin_up.py — rent a vast.ai GPU and bring the demo up, in one command.
 
-The zero-click counterpart to the manual flow in SETUP.md. It:
+The zero-click counterpart to the manual flow in README.md (Option C). It:
 
   1. searches vast.ai for the cheapest offer matching the constants below,
   2. rents it with provision.sh as the on-start script and your tokens injected
@@ -63,7 +63,7 @@ REQUIRED_SECRETS = ("VAST_API_KEY", "HF_TOKEN", "GITHUB_TOKEN")
 def load_dotenv(path):
     """Read KEY=value lines from .env into the environment. Real environment
     variables win, so you can override a single value for one run. Tolerates
-    `export ` prefixes so the SETUP.md snippet can be pasted in verbatim."""
+    `export ` prefixes so the README's deploy snippet can be pasted in verbatim."""
     if not os.path.isfile(path):
         return
     with open(path, encoding="utf-8") as fh:
@@ -207,7 +207,7 @@ def main():
     missing = [n for n in REQUIRED_SECRETS if not os.environ.get(n)]
     if missing:
         sys.exit("ERROR: missing " + ", ".join(missing) + ".\n"
-                 "Copy .env.example to .env and fill it in (see SETUP.md step 1).")
+                 "Copy .env.example to .env and fill it in (see README.md step 1).")
 
     onstart_path = os.path.join(ROOT, "provision.sh")
     if not os.path.isfile(onstart_path):

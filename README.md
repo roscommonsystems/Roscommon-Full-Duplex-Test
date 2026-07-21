@@ -2,72 +2,103 @@
 
 Reproducible setup for running **NVIDIA PersonaPlex** — a 7B real-time, full-duplex
 speech-to-speech conversational model (built on Kyutai's Moshi architecture) — on a
-[vast.ai](https://vast.ai) GPU instance.
+[vast.ai](https://vast.ai) GPU instance. Anyone on the team should be able to follow
+this unaided.
 
-The whole setup is automated by [`provision.sh`](./provision.sh).
+The demo ships two models: **PersonaPlex (Original)** and **PersonaPlex RL Seamless**,
+both selectable from the in-UI dropdown. The whole setup is automated by
+[`provision.sh`](./provision.sh).
 
 ---
 
-## Prerequisites (one-time)
+## 1. One-time prerequisites
 
-**Hugging Face** — where the model comes from:
+### Hugging Face (per person)
 
-1. A Hugging Face account.
-2. **Accept the model license:** https://huggingface.co/nvidia/personaplex-7b-v1
-3. **Create a READ token:** https://huggingface.co/settings/tokens → `HF_TOKEN`
+1. Create a Hugging Face account.
+2. **Accept the model licenses** (open each, click agree):
+   - https://huggingface.co/nvidia/personaplex-7b-v1 (base)
+   - https://huggingface.co/kyutai/personaplex-rl-seamless (RL seamless)
+3. Create a **READ token**: https://huggingface.co/settings/tokens → this is your
+   `HF_TOKEN`.
 
-**GitHub** — this repo is private, so the instance needs a personal access token with
-`repo` (read) scope → `GITHUB_TOKEN`.
+### vast.ai (per person)
 
-**vast.ai** — an account with credits. An API key
-([manage-keys](https://cloud.vast.ai/manage-keys/)) → `VAST_API_KEY` is *required* for
-the zero-click `spin_up.py` path and optional otherwise, where it only enables the
-in-UI "Shut down instance" button. See [SETUP.md](./SETUP.md) for the full walkthrough.
+1. Create a vast.ai account and **load credits**.
+2. Add your **SSH public key**: Account → SSH Keys (so you can SSH into instances).
+3. Create an **API key**: https://cloud.vast.ai/manage-keys/ → this is your
+   `VAST_API_KEY`. Required for the zero-click `spin_up.py` path; otherwise optional,
+   where it only enables the in-UI "Shut down instance" button.
+
+### GitHub
+
+This repo is **private**, so the instance needs read access to clone it. Create a
+**personal access token** with `repo` (read) scope → this is your `GITHUB_TOKEN`.
 
 > Tokens and license acceptance are per-account — each person needs their own.
 
-## Renting the GPU
+---
 
-- **RTX 5090 (32 GB) is the default and recommended GPU.** The model uses ~19.5 GB and
-  the live transcription (ASR) adds a few GB, so 32 GB is the practical minimum. 
-- **Rent a `datacenter:` offer, not a plain `host:` one.** Many hobbyist `host:`
-  machines have firewalled outbound internet and cannot download the model from
-  Hugging Face. `provision.sh` egress-tests before doing anything and will tell you
-  to swap hosts if it lands on a bad one.
-- Image: **PyTorch (Vast)**, ~100 GB container disk.
-- **Expose port `8998`** in the Docker options.
+## 2. Rent the GPU
 
-## Usage
+In the vast.ai console, pick an offer with:
+
+- **GPU: RTX 5090 (32 GB) is the default and recommended card.** The model uses
+  ~19.5 GB and the live transcription (ASR) adds a few GB, so 32 GB is the practical
+  minimum.
+- **A `datacenter:` offer**, not a plain `host:` one. Many hobbyist `host:` machines
+  have firewalled outbound internet and cannot download the model from Hugging Face.
+  `provision.sh` egress-tests before doing anything and will tell you to swap hosts if
+  it lands on a bad one.
+- **Image:** PyTorch (Vast) — e.g. `vastai/pytorch_cuda-13.2.1-auto/jupyter`.
+- **Disk:** ~100 GB.
+- **Expose port `8998`** in the Docker/launch options.
+
+*(Option C below rents the GPU for you and skips this step entirely.)*
+
+---
+
+## 3. Deploy
 
 ### Option A — Manual (recommended for your first run)
 
 You see the host-health check, download progress, and the final URL live, so you can
-catch a bad host instantly.
+catch a bad host instantly. SSH into the instance (use the Connect button's command),
+then:
 
 ```bash
-# SSH into the instance (use the Connect button's command), then:
-export HF_TOKEN=hf_xxxxxxxx
+export HF_TOKEN=hf_xxxxxxxx          # from step 1
+export GITHUB_TOKEN=ghp_xxxxxxxx     # from step 1 (private repo)
+export VAST_API_KEY=xxxxxxxx         # optional — enables the Shut down button
+
+git clone https://$GITHUB_TOKEN@github.com/roscommonsystems/Roscommon-Full-Duplex-Test \
+  /workspace/Roscommon-Full-Duplex-Test
+cd /workspace/Roscommon-Full-Duplex-Test
 bash provision.sh
 ```
 
-Copy the `https://<ip>:<port>` link it prints at the end.
+`provision.sh` egress-tests the host, installs deps, clones the PersonaPlex model code,
+installs Node and **builds the web client**, then launches the server. First boot
+downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it's up —
+copy the `https://<ip>:<port>` link it prints at the end.
 
 ### Option B — Hands-free (for repeat one-click spin-ups)
 
 Once you trust the flow:
 
 1. In the instance config, add env vars: `HF_TOKEN=hf_xxxxxxxx` and
-   `GITHUB_TOKEN=ghp_xxxxxxxx` (this repo is private and the instance must clone it),
-   plus optionally `VAST_API_KEY=xxxxxxxx` for the in-UI **Shut down instance** button.
+   `GITHUB_TOKEN=ghp_xxxxxxxx` (the instance has to clone this private repo), plus
+   optionally `VAST_API_KEY=xxxxxxxx` for the **Shut down instance** button.
 2. Paste the contents of `provision.sh` into vast.ai's **On-start Script** box.
 3. Make sure port `8998` is exposed.
 
 The instance boots with PersonaPlex already serving — no SSH needed. (Downside: if it
-lands on a bad host it fails silently at boot, so prefer Option A until you're confident.)
+lands on a bad host it fails silently at boot, so prefer Option A until you're
+confident.)
 
 ### Option C — Zero-click (`spin_up.py`, from your laptop)
 
-Rents the GPU *and* provisions it, so you never touch the console:
+Rents the GPU *and* provisions it, so you never touch the console — skips step 2:
 
 ```bash
 cp .env.example .env    # fill in VAST_API_KEY, HF_TOKEN, GITHUB_TOKEN
@@ -82,12 +113,53 @@ Stdlib only — nothing to install.
 **This spends money without further prompting** — billing starts the moment it rents.
 `MAX_DOLLARS_PER_HOUR` is your ceiling; the offer list is printed before it commits.
 
-## Accessing the Web UI
+---
 
-Open the printed `https://<ip>:<port>` link. The TLS cert is self-signed, so the
-browser warns *"your connection is not private"* — click **Advanced → Proceed**, then
-**Allow microphone**, pick a voice/role, and start talking. It's real-time: just speak
-and it replies.
+## 4. Open the demo
+
+1. Find the instance's **public IP** and the **external port mapped to 8998** (the
+   vast.ai console shows the mapping). Options A and C print the full URL for you.
+2. Open `https://<ip>:<port>`.
+3. The TLS cert is self-signed → the browser warns *"your connection is not private"* →
+   **Advanced → Proceed**, then **Allow microphone**.
+
+Pick a voice/role and start talking. It's real-time: just speak and it replies.
+
+### Using it
+
+- **Model dropdown** — pick PersonaPlex (Original) or RL Seamless. Switching reloads
+  the model (~45 s; you'll see a "Loading…" screen). Original is the best all-round
+  model to show; RL Seamless has smoother turn-taking (its license is non-commercial,
+  internal/demo use only).
+- **Text Prompt / Voice** — set the persona and voice, then **Connect** and talk.
+- **Shut down instance** — button at the bottom, only shown if `VAST_API_KEY` was set.
+  Destroys the instance and stops billing. Use this after a demo.
+
+### Live transcription (the user's words)
+
+The "You:" live transcript runs a second model (a streaming ASR) alongside PersonaPlex,
+which is why 32 GB is the practical minimum:
+
+- PersonaPlex ~19.5 GB + ASR ~2–6 GB fits comfortably on the default **RTX 5090
+  (32 GB)** (confirmed running with GPU ASR).
+- Enabled by the `ASR_CMD` env var (the ASR server's launch command). If `ASR_CMD` is
+  unset, the app runs normally and the transcript shows only the model's side.
+
+---
+
+## 5. Useful commands (on the instance)
+
+```bash
+tail -f /workspace/moshi.log     # server logs
+tmux attach -t moshi             # attach to the server session
+bash /workspace/run_moshi.sh     # restart the server only
+```
+
+## 6. Stopping / cleanup
+
+- Easiest: click **Shut down instance** in the UI.
+- Or destroy the instance from the vast.ai console (the ■/trash controls).
+- Destroying stops all billing; "Stopping" keeps the disk (small storage charge).
 
 ---
 
@@ -109,8 +181,8 @@ and it replies.
 Blackwell GPUs** (RTX 5090, `sm_120`) and fails at runtime with *"no kernel image is
 available."* The vast PyTorch image already ships a Blackwell-capable torch (cu128),
 so the script installs `moshi` with `--no-deps` to preserve it, then installs the
-remaining dependencies explicitly. (On Ada GPUs like the 4090 the default torch is
-fine, and this is harmless.)
+remaining dependencies explicitly. (On Ada GPUs the default torch is fine, and this is
+harmless.)
 
 ---
 
@@ -128,10 +200,12 @@ result back — either by restarting the model with the result in its text promp
 drip-feeding text into the Inner Monologue channel while muting native audio and
 playing TTS over it. This is a custom wrapper, not a built-in feature.
 
-## Useful commands (on the instance)
+---
 
-```bash
-tail -f /workspace/moshi.log     # server logs
-tmux attach -t moshi             # attach to the server session
-bash /workspace/run_moshi.sh     # restart the server only
-```
+## Notes
+
+- One model is loaded in VRAM at a time; switching restarts the model server.
+- The self-signed cert warning is expected; mic access needs the HTTPS (secure)
+  context.
+- `VAST_API_KEY` is your vast.ai **account** key (Bearer auth). If unset, the app runs
+  fine — the Shut down button just doesn't appear.
