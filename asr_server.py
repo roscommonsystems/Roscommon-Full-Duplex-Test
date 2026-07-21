@@ -9,14 +9,23 @@ No opus/sphn decoding — the client sends PCM directly, which is deterministic
 and avoids native-decoder threading issues. faster-whisper (CTranslate2) is
 isolated from moshi's torch build and falls back to CPU if CUDA isn't usable.
 
-Usage: python asr_server.py --port 8997 [--model base.en] [--device cuda]
+Usage: python asr_server.py   (configuration lives in the constants below)
 """
-import argparse
 import asyncio
 
 import numpy as np
 from aiohttp import web
 from faster_whisper import WhisperModel
+
+# ============================ Configuration ============================
+# Edit in place. serve.py launches this as a child process, so PORT must
+# stay in sync with ASR_PORT in serve.py.
+PORT = 8997
+MODEL = "medium.en"              # GPU model — accurate and low-latency
+CPU_FALLBACK_MODEL = "small.en"  # smaller, so CPU can still keep up
+DEVICE = "cuda"                  # "cpu" skips the GPU attempt entirely
+WINDOW_SECONDS = 2.5             # audio accumulated per transcription pass
+# =======================================================================
 
 ASR_RATE = 16000  # client sends 16 kHz mono float32
 
@@ -42,17 +51,9 @@ def load_model(model_name, device, cpu_model):
 
 
 async def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8997)
-    ap.add_argument("--model", default="base.en")
-    ap.add_argument("--cpu-model", default="small.en", help="fallback model if CUDA fails")
-    ap.add_argument("--device", default="cuda")
-    ap.add_argument("--window-sec", type=float, default=2.5)
-    args = ap.parse_args()
-
-    model = load_model(args.model, args.device, args.cpu_model)
+    model = load_model(MODEL, DEVICE, CPU_FALLBACK_MODEL)
     loop = asyncio.get_running_loop()
-    window = int(args.window_sec * ASR_RATE)
+    window = int(WINDOW_SECONDS * ASR_RATE)
 
     def transcribe_pcm(pcm16):
         # vad_filter drops silence (Whisper hallucinates "thank you"/"..." on it);
@@ -103,8 +104,8 @@ async def main():
     app.router.add_get("/api/transcribe", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, "127.0.0.1", args.port).start()
-    print(f"ASR server ready on 127.0.0.1:{args.port}", flush=True)
+    await web.TCPSite(runner, "127.0.0.1", PORT).start()
+    print(f"ASR server ready on 127.0.0.1:{PORT}", flush=True)
     while True:
         await asyncio.sleep(3600)
 

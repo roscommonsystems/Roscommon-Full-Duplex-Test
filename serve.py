@@ -5,12 +5,10 @@ Owns the public port: serves the built client, exposes the model-select
 control API, manages a moshi.server child, and reverse-proxies /api/chat
 to it. Selecting a model in the UI restarts the child with a new --hf-repo.
 """
-import argparse
 import asyncio
 import functools
 import glob
 import os
-import shlex
 import ssl
 import subprocess
 import sys
@@ -24,7 +22,22 @@ from supervisor.asr import AsrChild
 from supervisor.app import create_app
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_REPO = "nvidia/personaplex-7b-v1"
+
+# ============================== Configuration ==============================
+# Edit in place.
+
+HOST = "0.0.0.0"
+PORT = 8998                  # public port — must be exposed on the instance
+CHILD_PORT = 8999            # moshi.server, bound to localhost
+DEFAULT_REPO = "nvidia/personaplex-7b-v1"   # model pre-loaded at boot
+STATIC_DIR = os.path.join(ROOT, "client", "dist")
+USE_SSL = True               # False serves plain HTTP (local testing only —
+                             # the browser needs HTTPS to grant mic access)
+CPU_OFFLOAD = False
+
+ENABLE_ASR = True            # live "You:" transcription; costs ~2-6GB VRAM
+ASR_PORT = 8997              # must stay in sync with PORT in asr_server.py
+# ==========================================================================
 
 
 def shared_voices_dir():
@@ -98,18 +111,6 @@ def self_signed_ssl_context():
 
 
 def main():
-    p = argparse.ArgumentParser(description="Serve Roscommon Full Duplex Test.")
-    p.add_argument("--host", default="0.0.0.0")
-    p.add_argument("--port", type=int, default=8998)
-    p.add_argument("--child-port", type=int, default=8999)
-    p.add_argument("--hf-repo", default=DEFAULT_REPO, help="model to pre-load at boot")
-    p.add_argument("--static", default=os.path.join(ROOT, "client", "dist"))
-    p.add_argument("--cpu-offload", action="store_true")
-    p.add_argument("--no-ssl", action="store_true", help="serve plain HTTP (local testing)")
-    p.add_argument("--asr-port", type=int, default=8997)
-    p.add_argument("--no-asr", action="store_true", help="disable user transcription")
-    args = p.parse_args()
-
     if not os.environ.get("HF_TOKEN"):
         sys.exit(
             "ERROR: HF_TOKEN is not set.\n"
@@ -119,33 +120,32 @@ def main():
         )
     os.environ.setdefault("HF_HOME", "/workspace/.hf_home")
 
-    if not os.path.isdir(args.static):
-        print(f"WARNING: static dir not found ({args.static}); "
+    if not os.path.isdir(STATIC_DIR):
+        print(f"WARNING: static dir not found ({STATIC_DIR}); "
               "build the client with `cd client && npm install && npm run build`.")
 
     registry = ModelRegistry.from_file(os.path.join(ROOT, "models.json"))
-    if not registry.has(args.hf_repo):
-        sys.exit(f"ERROR: --hf-repo {args.hf_repo} is not in models.json")
+    if not registry.has(DEFAULT_REPO):
+        sys.exit(f"ERROR: DEFAULT_REPO {DEFAULT_REPO} is not in models.json")
 
     from supervisor.scenarios import ScenarioStore
     scenarios_path = os.path.join(ROOT, "scenarios.json")
     scenarios = ScenarioStore.from_file(scenarios_path) if os.path.isfile(scenarios_path) else None
 
-    builder = functools.partial(build_moshi_cmd, cpu_offload=args.cpu_offload, registry=registry)
-    child = ChildManager(builder, port=args.child_port)
+    builder = functools.partial(build_moshi_cmd, cpu_offload=CPU_OFFLOAD, registry=registry)
+    child = ChildManager(builder, port=CHILD_PORT)
 
     asr = None
-    asr_cmd = os.environ.get("ASR_CMD")
-    if asr_cmd and not args.no_asr:
-        asr = AsrChild(shlex.split(asr_cmd), port=args.asr_port)
+    if ENABLE_ASR:
+        asr = AsrChild([sys.executable, os.path.join(ROOT, "asr_server.py")], port=ASR_PORT)
 
-    app = create_app(registry, child, static_dir=args.static, asr=asr, scenarios=scenarios)
+    app = create_app(registry, child, static_dir=STATIC_DIR, asr=asr, scenarios=scenarios)
 
     async def _boot(app):
         # Pre-load the default model before accepting conversations.
-        await child.switch(args.hf_repo)
+        await child.switch(DEFAULT_REPO)
         if child.state == "ready":
-            print(f"Model ready: {registry.display_name(args.hf_repo)}", flush=True)
+            print(f"Model ready: {registry.display_name(DEFAULT_REPO)}", flush=True)
         else:
             print(f"Model failed to load: {child.error}", flush=True)
         # Start the (persistent, model-agnostic) ASR child for user transcription.
@@ -160,12 +160,12 @@ def main():
     app.on_startup.append(_boot)
     app.on_cleanup.append(_shutdown)
 
-    ssl_ctx = None if args.no_ssl else self_signed_ssl_context()
-    scheme = "http" if args.no_ssl else "https"
-    print(f"Pre-loading {registry.display_name(args.hf_repo)} ({args.hf_repo})...")
-    print(f"Serving on {scheme}://<public-ip>:{args.port} "
+    ssl_ctx = self_signed_ssl_context() if USE_SSL else None
+    scheme = "https" if USE_SSL else "http"
+    print(f"Pre-loading {registry.display_name(DEFAULT_REPO)} ({DEFAULT_REPO})...")
+    print(f"Serving on {scheme}://<public-ip>:{PORT} "
           f"(self-signed cert — click through the warning, then allow mic).")
-    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_ctx)
+    web.run_app(app, host=HOST, port=PORT, ssl_context=ssl_ctx)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,13 @@ RUNNING_TIMEOUT_MIN = 15       # offer accepted -> container running
 READY_TIMEOUT_MIN = 30         # container running -> model loaded
 POLL_SECONDS = 15
 
+# What to do when provisioning fails, times out, or you Ctrl-C: a rented
+# instance bills whether or not the demo works, and the in-UI "Shut down"
+# button is unreachable when the server never came up. True destroys it,
+# False leaves it for debugging, "ask" prompts (and leaves it if you're
+# not on a terminal).
+DESTROY_ON_FAILURE = "ask"
+
 # ==========================================================================
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -80,9 +87,13 @@ def load_dotenv(path):
                 os.environ[key] = value
 
 
-def api(method, path, body=None):
-    """Call the vast API and return parsed JSON, exiting with the server's own
-    message on failure (their errors are specific — don't bury them)."""
+def api(method, path, body=None, fatal=True):
+    """Call the vast API and return parsed JSON, reporting the server's own
+    message on failure (their errors are specific — don't bury them).
+
+    fatal=False returns None instead of exiting, for calls made while cleaning
+    up — a failed teardown must still print how to destroy the box by hand.
+    """
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(VAST_API_BASE + path, data=data, method=method)
     req.add_header("Authorization", f"Bearer {os.environ['VAST_API_KEY']}")
@@ -93,10 +104,14 @@ def api(method, path, body=None):
         with urllib.request.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="replace")[:800]
-        sys.exit(f"ERROR: vast API {method} {path} returned {e.code}\n{detail}")
+        problem = (f"ERROR: vast API {method} {path} returned {e.code}\n"
+                   + e.read().decode(errors="replace")[:800])
     except urllib.error.URLError as e:
-        sys.exit(f"ERROR: cannot reach the vast API ({e.reason})")
+        problem = f"ERROR: cannot reach the vast API ({e.reason})"
+    if fatal:
+        sys.exit(problem)
+    print(problem)
+    return None
 
 
 def find_offers():
@@ -159,8 +174,39 @@ def endpoint(inst):
     return ip, None
 
 
+def destroy(instance_id):
+    """Destroy the instance, stopping billing."""
+    if api("DELETE", f"/instances/{instance_id}/", fatal=False) is None:
+        print(f"Could not destroy instance {instance_id} automatically. "
+              "Destroy it by hand at https://cloud.vast.ai/instances/ — "
+              "it is still billing.")
+    else:
+        print(f"Instance {instance_id} destroyed — billing stopped.")
+
+
+def on_failure(instance_id, message):
+    """Every path where the demo did not come up ends here. The instance is
+    rented and billing regardless, and the in-UI Shut down button is no help
+    when the server is what failed — so offer the exit from this side."""
+    print(f"\n{message}")
+    choice = DESTROY_ON_FAILURE
+    if choice == "ask":
+        try:
+            reply = input(f"Destroy instance {instance_id} and stop billing? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            reply = ""  # not on a terminal — never destroy on a guess
+        choice = reply.strip().lower().startswith("y")
+    if choice:
+        destroy(instance_id)
+    else:
+        print(f"\nInstance {instance_id} is still running AND BILLING.")
+        print("  Destroy it at https://cloud.vast.ai/instances/ when you're done.")
+        print("  Logs:  ssh into it, then tail -f /workspace/moshi.log")
+
+
 def wait_for_running(instance_id):
-    """Block until the container is running and its port is mapped."""
+    """Block until the container is running and its port is mapped. Returns
+    (ip, port), or None if it never got there in time."""
     deadline = time.time() + RUNNING_TIMEOUT_MIN * 60
     last = None
     while time.time() < deadline:
@@ -176,8 +222,7 @@ def wait_for_running(instance_id):
         if status == "running" and ip and port:
             return ip, port
         time.sleep(POLL_SECONDS)
-    sys.exit(f"ERROR: instance {instance_id} was not running after "
-             f"{RUNNING_TIMEOUT_MIN} min. Check https://cloud.vast.ai/instances/")
+    return None
 
 
 def wait_for_model(url):
@@ -235,25 +280,35 @@ def main():
           "billing starts now.")
     instance_id = rent(pick["id"], onstart)
 
-    print(f"\nWaiting for the container (up to {RUNNING_TIMEOUT_MIN} min)...")
-    ip, port = wait_for_running(instance_id)
-    url = f"https://{ip}:{port}"
+    # From here on the instance is billing, so every exit goes through
+    # on_failure() rather than just printing and leaving it running.
+    try:
+        print(f"\nWaiting for the container (up to {RUNNING_TIMEOUT_MIN} min)...")
+        running = wait_for_running(instance_id)
+        if running is None:
+            return on_failure(instance_id, f"Container was not running after "
+                                           f"{RUNNING_TIMEOUT_MIN} min.")
+        ip, port = running
+        url = f"https://{ip}:{port}"
 
-    print(f"\nContainer up at {url}. Provisioning + first model download take a "
-          f"while (up to {READY_TIMEOUT_MIN} min) — the port stays closed until "
-          "the model has loaded.")
-    status = wait_for_model(url)
+        print(f"\nContainer up at {url}. Provisioning + first model download take "
+              f"a while (up to {READY_TIMEOUT_MIN} min) — the port stays closed "
+              "until the model has loaded.")
+        status = wait_for_model(url)
+    except KeyboardInterrupt:
+        return on_failure(instance_id, "Interrupted — but the instance is rented "
+                                       "and billing.")
 
-    print()
     if status is None:
-        print(f"Model not ready after {READY_TIMEOUT_MIN} min. It may still be "
-              "downloading — check the log over SSH: tail -f /workspace/moshi.log")
-    elif status.get("state") == "ready":
-        print(f"UP — {status.get('display_name')} is loaded.")
-    else:
-        print(f"Server is up but the model did not load: "
-              f"{status.get('error') or status.get('state')}")
+        return on_failure(instance_id,
+                          f"Model not ready after {READY_TIMEOUT_MIN} min. It may "
+                          "still be downloading — if so, destroying now throws away "
+                          "the download.")
+    if status.get("state") != "ready":
+        return on_failure(instance_id, "Server is up but the model did not load: "
+                                       f"{status.get('error') or status.get('state')}")
 
+    print(f"\nUP — {status.get('display_name')} is loaded.")
     print(f"\n  Web UI:   {url}")
     print("            (self-signed cert: click through the warning, then allow mic)")
     print(f"  Instance: {instance_id}")

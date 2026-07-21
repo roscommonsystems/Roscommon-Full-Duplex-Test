@@ -154,7 +154,8 @@ export HF_HOME=$HF_HOME
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
-export ASR_CMD="\${ASR_CMD:-python asr_server.py --port 8997 --model medium.en --device cuda --cpu-model small.en}"
+# serve.py launches asr_server.py itself; both are configured by the constants
+# at the top of those files (ENABLE_ASR / ASR_PORT and PORT / MODEL).
 # Let CTranslate2 (faster-whisper) find the pip-installed CUDA libs for GPU.
 PYSITE=\$(python -c "import site;print(site.getsitepackages()[0])" 2>/dev/null)
 export LD_LIBRARY_PATH="\$PYSITE/nvidia/cublas/lib:\$PYSITE/nvidia/cudnn/lib:\${LD_LIBRARY_PATH:-}"

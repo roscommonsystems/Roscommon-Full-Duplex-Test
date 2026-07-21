@@ -142,8 +142,25 @@ which is why 32 GB is the practical minimum:
 
 - PersonaPlex ~19.5 GB + ASR ~2–6 GB fits comfortably on the default **RTX 5090
   (32 GB)** (confirmed running with GPU ASR).
-- Enabled by the `ASR_CMD` env var (the ASR server's launch command). If `ASR_CMD` is
-  unset, the app runs normally and the transcript shows only the model's side.
+- Controlled by `ENABLE_ASR` at the top of [`serve.py`](./serve.py). Set it to `False`
+  and the app runs normally, with the transcript showing only the model's side.
+
+---
+
+## Configuration
+
+There are no command-line flags. Each entry point is configured by a block of
+constants at the top of the file — edit them in place and restart:
+
+| File | Controls |
+|---|---|
+| [`serve.py`](./serve.py) | `PORT`, `CHILD_PORT`, `DEFAULT_REPO` (model pre-loaded at boot), `USE_SSL`, `CPU_OFFLOAD`, `ENABLE_ASR`, `ASR_PORT` |
+| [`asr_server.py`](./asr_server.py) | `PORT`, `MODEL`, `CPU_FALLBACK_MODEL`, `DEVICE`, `WINDOW_SECONDS` |
+| [`spin_up.py`](./spin_up.py) | which GPU to rent, price ceiling, timeouts, `DESTROY_ON_FAILURE` |
+
+`serve.py` launches `asr_server.py` itself, so **`ASR_PORT` in `serve.py` must match
+`PORT` in `asr_server.py`.** Secrets stay out of all of these — they come from the
+environment (on the instance) or `.env` (for `spin_up.py`).
 
 ---
 
