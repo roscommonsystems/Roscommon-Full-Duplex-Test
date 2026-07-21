@@ -8,19 +8,28 @@ The whole setup is automated by [`provision.sh`](./provision.sh).
 
 ---
 
-## Prerequisites (one-time, on Hugging Face)
+## Prerequisites (one-time)
+
+**Hugging Face** — where the model comes from:
 
 1. A Hugging Face account.
 2. **Accept the model license:** https://huggingface.co/nvidia/personaplex-7b-v1
-3. **Create a READ token:** https://huggingface.co/settings/tokens
+3. **Create a READ token:** https://huggingface.co/settings/tokens → `HF_TOKEN`
 
-> The token and license acceptance are per-account — each person needs their own.
+**GitHub** — this repo is private, so the instance needs a personal access token with
+`repo` (read) scope → `GITHUB_TOKEN`.
+
+**vast.ai** — an account with credits. An API key
+([manage-keys](https://cloud.vast.ai/manage-keys/)) → `VAST_API_KEY` is *required* for
+the zero-click `spin_up.py` path and optional otherwise, where it only enables the
+in-UI "Shut down instance" button. See [SETUP.md](./SETUP.md) for the full walkthrough.
+
+> Tokens and license acceptance are per-account — each person needs their own.
 
 ## Renting the GPU
 
 - **RTX 5090 (32 GB) is the default and recommended GPU.** The model uses ~19.5 GB and
-  the live transcription (ASR) adds a few GB, so 32 GB is the practical minimum. A 24 GB
-  RTX 4090 works only if you disable transcription.
+  the live transcription (ASR) adds a few GB, so 32 GB is the practical minimum. 
 - **Rent a `datacenter:` offer, not a plain `host:` one.** Many hobbyist `host:`
   machines have firewalled outbound internet and cannot download the model from
   Hugging Face. `provision.sh` egress-tests before doing anything and will tell you
@@ -47,12 +56,31 @@ Copy the `https://<ip>:<port>` link it prints at the end.
 
 Once you trust the flow:
 
-1. In the instance config, add an env var: `HF_TOKEN=hf_xxxxxxxx`
+1. In the instance config, add env vars: `HF_TOKEN=hf_xxxxxxxx` and
+   `GITHUB_TOKEN=ghp_xxxxxxxx` (this repo is private and the instance must clone it),
+   plus optionally `VAST_API_KEY=xxxxxxxx` for the in-UI **Shut down instance** button.
 2. Paste the contents of `provision.sh` into vast.ai's **On-start Script** box.
 3. Make sure port `8998` is exposed.
 
 The instance boots with PersonaPlex already serving — no SSH needed. (Downside: if it
 lands on a bad host it fails silently at boot, so prefer Option A until you're confident.)
+
+### Option C — Zero-click (`spin_up.py`, from your laptop)
+
+Rents the GPU *and* provisions it, so you never touch the console:
+
+```bash
+cp .env.example .env    # fill in VAST_API_KEY, HF_TOKEN, GITHUB_TOKEN
+python spin_up.py
+```
+
+It picks the cheapest offer matching the constants at the top of
+[`spin_up.py`](./spin_up.py) (GPU, VRAM, price ceiling, datacenter-only), rents it with
+`provision.sh` as the on-start script, waits for the model to load, and prints the URL.
+Stdlib only — nothing to install.
+
+**This spends money without further prompting** — billing starts the moment it rents.
+`MAX_DOLLARS_PER_HOUR` is your ceiling; the offer list is printed before it commits.
 
 ## Accessing the Web UI
 

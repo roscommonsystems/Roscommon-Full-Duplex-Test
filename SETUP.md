@@ -67,6 +67,12 @@ downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it
 > env vars and paste the contents of `provision.sh` into vast.ai's **On-start Script**
 > box (port 8998 exposed). The instance boots serving the demo with no SSH.
 
+> **Zero-click option:** skip steps 2 and 3 entirely. Clone this repo locally,
+> `cp .env.example .env`, fill in the three tokens, and run `python spin_up.py`. It
+> rents the cheapest offer matching the constants at the top of that file, provisions
+> it, waits for the model, and prints the URL. Note it starts billing as soon as it
+> rents — `MAX_DOLLARS_PER_HOUR` is the ceiling it will not cross.
+
 ---
 
 ## 4. Open the demo
