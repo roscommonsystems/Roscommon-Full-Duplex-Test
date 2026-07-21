@@ -116,11 +116,15 @@ uv pip install \
   'sphn>=0.1.4,<0.2' \
   'aiohttp>=3.10.5,<3.11'
 
-# aiohttp (the supervisor's only extra runtime dep) is already installed above
-# in the moshi deps block (pinned >=3.10.5,<3.11) — no separate install needed.
+# Our own runtime deps (aiohttp, huggingface-hub, numpy, faster-whisper,
+# onnxruntime). requirements.txt repeats the pins from the block above, so
+# resolving faster-whisper here can't drag huggingface-hub past the version
+# moshi tolerates. The overlapping packages are already satisfied — no-ops.
+log "Installing the app's runtime dependencies (requirements.txt)"
+uv pip install -r "$APP_DIR/requirements.txt"
 
-log "Installing faster-whisper (+ CUDA libs for GPU; isolated from moshi's torch)"
-uv pip install faster-whisper onnxruntime nvidia-cublas-cu12 nvidia-cudnn-cu12
+log "Installing CUDA libs for faster-whisper's GPU path (isolated from moshi's torch)"
+uv pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 
 log "Installing Node.js (to build the web client)"
 if ! command -v node >/dev/null 2>&1; then

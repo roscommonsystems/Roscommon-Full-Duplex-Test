@@ -1,1 +1,17 @@
-aiohttp>=3.9
+# Runtime dependencies for serve.py, supervisor/ and asr_server.py.
+#
+# The pins mirror what provision.sh installs for moshi. moshi is installed with
+# --no-deps to preserve the image's Blackwell-capable torch, so the packages we
+# share with it (aiohttp, huggingface-hub, numpy) must stay inside the ranges
+# moshi actually tolerates — don't widen them without checking provision.sh.
+
+# supervisor/, serve.py, asr_server.py — HTTP/WS server, chat proxy, vast API
+aiohttp>=3.10.5,<3.11
+# serve.py — hf_hub_download() for fine-tunes shipped as bare weights
+huggingface-hub>=0.24,<0.25
+# asr_server.py — PCM accumulation between transcription windows
+numpy>=1.26,<2.2
+# asr_server.py — transcription (CTranslate2; isolated from moshi's torch)
+faster-whisper
+# faster-whisper's vad_filter=True path
+onnxruntime

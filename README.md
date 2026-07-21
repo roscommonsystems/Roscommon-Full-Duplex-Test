@@ -70,9 +70,10 @@ and it replies.
 3. Installs system deps (`libopus-dev`, `libportaudio2`).
 4. Clones the [PersonaPlex repo](https://github.com/NVIDIA/personaplex).
 5. Installs `moshi` with `--no-deps`, then adds its other deps — see note below.
-6. Sanity-checks that torch sees the GPU.
-7. Launches the Moshi server in a `tmux` session on `0.0.0.0:8998`.
-8. Waits for the model to load, then prints the public URL.
+6. Installs the app's own deps from `requirements.txt` (aiohttp, faster-whisper, …).
+7. Sanity-checks that torch sees the GPU.
+8. Launches the Moshi server in a `tmux` session on `0.0.0.0:8998`.
+9. Waits for the model to load, then prints the public URL.
 
 ### Note: the Blackwell (RTX 5090) gotcha
 
