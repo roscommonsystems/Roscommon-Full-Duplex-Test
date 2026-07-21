@@ -19,9 +19,8 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      # Both files in ONE pip call so the resolver sees requirements.txt's
-      # aiohttp ceiling and requirements-dev.txt's pytest-aiohttp pin together.
-      # Installing the runtime here is also deliberate: it is the check that
+      # Both files: the tests import aiohttp, which is a runtime dep. Installing
+      # the runtime here is also deliberate -- it is the check that
       # requirements.txt still resolves, so a broken pin fails here instead of
       # halfway through provisioning a rented GPU.
       - name: Install dependencies

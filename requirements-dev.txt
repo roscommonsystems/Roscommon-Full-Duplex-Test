@@ -1,18 +1,16 @@
 # Test-only dependencies. This file is NOT self-contained: the suite imports
-# aiohttp directly, which comes from requirements.txt. Install both together:
+# aiohttp directly, which comes from requirements.txt. Install both:
 #
 #     pip install -r requirements.txt -r requirements-dev.txt
 #
-# Keep that to one pip invocation. The pin below is only satisfiable against the
-# aiohttp ceiling in requirements.txt, so the resolver has to see both files at
-# once; installing them in separate commands lets pip upgrade aiohttp out of
-# range. requirements.txt deliberately stays test-free -- provision.sh installs
-# it on a rented GPU, and that is not where you want to discover a broken pin.
+# requirements.txt deliberately stays test-free. provision.sh installs it on a
+# rented GPU, and that is not where you want to discover a broken pin.
+#
+# Nothing below is version-coupled to the runtime. We used to carry
+# pytest-aiohttp pinned <1.1, because 1.1+ wants aiohttp>=3.11.0b0 while moshi
+# forces aiohttp<3.11 -- a test package held hostage by a runtime pin. Its two
+# fixtures now live in tests/conftest.py, built on aiohttp.test_utils (part of
+# aiohttp itself), so the conflict is gone. Don't reintroduce it.
 
 pytest>=8.0
 pytest-asyncio>=1.0
-# Must stay below 1.1: pytest-aiohttp 1.1+ requires aiohttp>=3.11.0b0, which
-# contradicts the aiohttp>=3.10.5,<3.11 that moshi forces (provision.sh mirrors
-# moshi's pins into requirements.txt). Holding it here keeps the tests running
-# against the same aiohttp the GPU host uses.
-pytest-aiohttp>=1.0,<1.1
