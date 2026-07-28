@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """spin_up.py — rent a vast.ai GPU and bring the demo up, in one command.
 
-The zero-click counterpart to the manual flow in README.md (Option C). It:
+The supported way to deploy the demo (see README.md section 3). It:
 
   1. searches vast.ai for the cheapest offer matching the constants below,
   2. rents it with provision.sh as the on-start script and your tokens injected
@@ -30,8 +30,8 @@ GPU_NAME = "RTX_5090"          # vast's gpu_name; underscores, not spaces
 NUM_GPUS = 1
 MIN_GPU_RAM_GB = 32            # model ~19.5GB + a few GB for ASR
 DISK_GB = 100                  # ~16GB of weights + CUDA wheels + client build
-MAX_DOLLARS_PER_HOUR = 1.20    # walk away above this
-MIN_RELIABILITY = 0.98         # vast's 0-1 host score
+MAX_DOLLARS_PER_HOUR = 2.20    # walk away above this
+MIN_RELIABILITY = 0.90         # vast's 0-1 host score
 MIN_INET_DOWN_MBPS = 200       # the model download is ~16GB; slow hosts hurt
 DATACENTER_ONLY = True         # plain host: offers often have firewalled egress
 

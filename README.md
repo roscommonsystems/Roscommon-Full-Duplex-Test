@@ -50,36 +50,13 @@ In the vast.ai console, pick an offer with:
 - **Disk:** ~100 GB.
 - **Expose port `8998`** in the Docker/launch options.
 
-*(Option C below rents the GPU for you and skips this step entirely.)*
+*(`spin_up.py` below rents the GPU for you and skips this step entirely.)*
 
 ---
 
 ## 3. Deploy
 
-### Option A — Manual (recommended for your first run)
-
-You see the host-health check, download progress, and the final URL live, so you can
-catch a bad host instantly. SSH into the instance (use the Connect button's command),
-then:
-
-```bash
-export HF_TOKEN=hf_xxxxxxxx          # from step 1
-export VAST_API_KEY=xxxxxxxx         # optional — enables the Shut down button
-
-git clone https://github.com/roscommonsystems/Roscommon-Full-Duplex-Test \
-  /workspace/Roscommon-Full-Duplex-Test
-cd /workspace/Roscommon-Full-Duplex-Test
-bash provision.sh
-```
-
-`provision.sh` egress-tests the host, installs deps, clones the PersonaPlex model code,
-installs Node and **builds the web client**, then launches the server. First boot
-downloads ~16 GB (a few minutes). When you see **`Model ready:`** in the log, it's up —
-copy the `https://<ip>:<port>` link it prints at the end.
-
-### Option B — Hands-free (for repeat one-click spin-ups)
-
-Once you trust the flow:
+### Hands-free — paste `provision.sh` into the console
 
 1. In the instance config, add an env var: `HF_TOKEN=hf_xxxxxxxx`, plus optionally
    `VAST_API_KEY=xxxxxxxx` for the **Shut down instance** button.
@@ -87,10 +64,10 @@ Once you trust the flow:
 3. Make sure port `8998` is exposed.
 
 The instance boots with PersonaPlex already serving — no SSH needed. (Downside: if it
-lands on a bad host it fails silently at boot, so prefer Option A until you're
-confident.)
+lands on a bad host it fails silently at boot, and you see nothing until you SSH in and
+read `/workspace/moshi.log`.)
 
-### Option C — Zero-click (`spin_up.py`, from your laptop)
+### Zero-click (`spin_up.py`, from your laptop) — recommended
 
 Rents the GPU *and* provisions it, so you never touch the console — skips step 2:
 
@@ -112,7 +89,7 @@ Stdlib only — nothing to install.
 ## 4. Open the demo
 
 1. Find the instance's **public IP** and the **external port mapped to 8998** (the
-   vast.ai console shows the mapping). Options A and C print the full URL for you.
+   vast.ai console shows the mapping). `spin_up.py` prints the full URL for you.
 2. Open `https://<ip>:<port>`.
 3. The TLS cert is self-signed → the browser warns *"your connection is not private"* →
    **Advanced → Proceed**, then **Allow microphone**.

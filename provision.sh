@@ -15,16 +15,19 @@
 #   (optional) For the in-UI "Shut down instance" button, also set:
 #        VAST_API_KEY=<your vast.ai account API key>   (https://cloud.vast.ai/manage-keys/)
 #
-# HOW TO USE — pick ONE:
+# HOW THIS RUNS:
 #
-#   A) Manually, after SSHing into the instance:
+#   Normally you never invoke this yourself — spin_up.py passes it to vast.ai
+#   as the instance's On-start Script, so it runs automatically at boot. (You
+#   can also paste this whole file into the console's "On-start Script" box by
+#   hand; set HF_TOKEN as an instance env var and expose port 8998.)
+#
+#   It is also safe to run directly on the instance when debugging, which is
+#   the only way to watch it work in real time:
 #        export HF_TOKEN=hf_xxxxxxxx
 #        bash provision.sh
-#
-#   B) As a vast.ai On-start Script:
-#        - In the instance config, add an env var:  HF_TOKEN=hf_xxxxxxxx
-#        - Paste this whole file into the "On-start Script" box.
-#        - Make sure port 8998 is exposed in the Docker options.
+#   Re-running is idempotent — an already-cloned repo and installed deps are
+#   detected and skipped.
 #
 # IMPORTANT: rent a "datacenter:" offer (not a plain "host:" one). Many hobbyist
 # "host:" machines have firewalled outbound internet and cannot download the model
