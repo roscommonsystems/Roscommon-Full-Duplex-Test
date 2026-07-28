@@ -161,6 +161,26 @@ else
   tail -n 5 /workspace/model_download.log || true
 fi
 
+# --- Prefetch the other models from models.json (background, non-gating) ----
+# The UI can switch models, and a switch re-launches moshi.server on the new
+# repo — blocking until its weights are local. Warming them now makes that
+# switch near-instant. Started only *after* the default model finished, so the
+# two never split the pipe while the boot is gated on the default; and fully
+# detached, so provisioning neither waits on them nor fails with them (e.g. a
+# model whose HF license hasn't been accepted just logs and stays cold).
+EXTRA_MODELS="$(python - "$APP_DIR/models.json" <<'PY' || true
+import json, sys
+for m in json.load(open(sys.argv[1])):
+    if m["id"] != "nvidia/personaplex-7b-v1":   # serve.py's DEFAULT_REPO
+        print(m["id"])
+PY
+)"
+for repo in $EXTRA_MODELS; do
+  log "Prefetching $repo in the background (does not block startup)"
+  nohup huggingface-cli download "$repo" \
+      >> /workspace/model_prefetch_extra.log 2>&1 &
+done
+
 # --- Launch ----------------------------------------------------------------
 log "Writing run script and launching server (tmux session 'moshi')"
 cat > /workspace/run_moshi.sh <<EOF
