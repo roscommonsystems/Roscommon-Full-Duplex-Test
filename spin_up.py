@@ -101,8 +101,10 @@ def api(method, path, body=None, fatal=True):
     """Call the vast API and return parsed JSON, reporting the server's own
     message on failure (their errors are specific — don't bury them).
 
-    fatal=False returns None instead of exiting, for calls made while cleaning
-    up — a failed teardown must still print how to destroy the box by hand.
+    fatal=False is for calls that must not kill the script (teardown, calls the
+    caller can answer with a retry). When the server sent a JSON error — vast's
+    all carry success:false and a msg — that dict is returned so the caller can
+    read *which* error; anything less structured prints and returns None.
     """
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(VAST_API_BASE + path, data=data, method=method)
@@ -114,8 +116,15 @@ def api(method, path, body=None, fatal=True):
         with urllib.request.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
-        problem = (f"ERROR: vast API {method} {path} returned {e.code}\n"
-                   + e.read().decode(errors="replace")[:800])
+        raw = e.read().decode(errors="replace")
+        problem = f"ERROR: vast API {method} {path} returned {e.code}\n" + raw[:800]
+        if not fatal:
+            try:
+                err = json.loads(raw)
+                if isinstance(err, dict):
+                    return err
+            except ValueError:
+                pass
     except urllib.error.URLError as e:
         problem = f"ERROR: cannot reach the vast API ({e.reason})"
     if fatal:
@@ -155,8 +164,9 @@ def find_offers():
 
 
 def rent(offer_id, onstart):
-    """Rent an offer. Tokens ride in as container env vars; MOSHI_PORT is the
-    only port we publish (vast maps it to a random external one).
+    """Rent an offer; the new contract id, or None if the offer was already
+    gone (rent the next one). Tokens ride in as container env vars; MOSHI_PORT
+    is the only port we publish (vast maps it to a random external one).
 
     `env` is a dict, in the shape vast's own CLI produces from the docker-style
     flag string its docs show: `-e NAME=value` becomes a plain NAME->value
@@ -174,10 +184,16 @@ def rent(offer_id, onstart):
         "runtype": RUNTYPE,
         "label": LABEL,
     }
-    result = api("PUT", f"/v0/asks/{offer_id}/", body)
-    if not result.get("success") or not result.get("new_contract"):
-        sys.exit(f"ERROR: vast refused the rental — {result}")
-    return result["new_contract"]
+    result = api("PUT", f"/v0/asks/{offer_id}/", body, fatal=False) or {}
+    if result.get("success") and result.get("new_contract"):
+        return result["new_contract"]
+    # The cheapest offers are contested and their ids rotate, so the id we
+    # searched up is routinely gone seconds later. That's the one refusal the
+    # caller can fix by itself — everything else (bad image, no credit) would
+    # fail identically on every offer, so trying more of them just hides it.
+    if "no_such_ask" in (result.get("msg") or ""):
+        return None
+    sys.exit(f"ERROR: vast refused the rental — {result or 'no response'}")
 
 
 def get_instance(instance_id):
@@ -203,7 +219,8 @@ def endpoint(inst):
 
 def destroy(instance_id):
     """Destroy the instance, stopping billing."""
-    if api("DELETE", f"/v0/instances/{instance_id}/", fatal=False) is None:
+    result = api("DELETE", f"/v0/instances/{instance_id}/", fatal=False)
+    if result is None or not result.get("success"):
         print(f"Could not destroy instance {instance_id} automatically. "
               "Destroy it by hand at https://cloud.vast.ai/instances/ — "
               "it is still billing.")
@@ -320,10 +337,30 @@ def main():
               f"{offer.get('geolocation') or '?'}  "
               f"{int(offer.get('inet_down') or 0)}Mbps down  id={offer.get('id')}")
 
-    pick = offers[0]
-    print(f"\nRenting offer {pick['id']} at ${pick.get('dph_total', 0):.3f}/hr — "
-          "billing starts now.")
-    instance_id = rent(pick["id"], onstart)
+    # Between the search and the rental the cheapest ids routinely vanish —
+    # they're the ones everyone else's script is also grabbing, and vast
+    # rotates them besides. A failed attempt costs nothing (money only moves
+    # when a rental succeeds, and at most one does), so walk the list, and
+    # refresh it once if the whole batch went stale under us.
+    instance_id = None
+    for attempt in (1, 2):
+        for offer in offers:
+            print(f"\nRenting offer {offer['id']} at "
+                  f"${offer.get('dph_total', 0):.3f}/hr...")
+            instance_id = rent(offer["id"], onstart)
+            if instance_id:
+                break
+            print("  gone — someone else took it. Trying the next offer.")
+            time.sleep(1)  # their API rate-limits bursts
+        if instance_id or attempt == 2:
+            break
+        print("\nThe whole batch went stale — searching again.")
+        offers = find_offers()
+    if not instance_id:
+        sys.exit("ERROR: every offer vanished before we could rent it — the "
+                 "market is moving fast right now. Re-run in a minute, or raise "
+                 "MAX_DOLLARS_PER_HOUR to bid on less contested offers.")
+    print(f"Rented — instance {instance_id} is billing from now on.")
 
     # From here on the instance is billing, so every exit goes through
     # on_failure() rather than just printing and leaving it running.
