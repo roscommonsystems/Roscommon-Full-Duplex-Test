@@ -56,8 +56,6 @@ class ChildManager:
 
     async def _start(self, repo):
         cmd = self._build(repo, self.port)
-        if asyncio.iscoroutine(cmd):  # builder may be async (e.g. downloads weights)
-            cmd = await cmd
         self._proc = await asyncio.create_subprocess_exec(*cmd)
         self.current_repo = repo
         await self._wait_ready()

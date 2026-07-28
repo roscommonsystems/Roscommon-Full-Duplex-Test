@@ -7,7 +7,8 @@
 
 # supervisor/, serve.py, asr_server.py — HTTP/WS server, chat proxy, vast API
 aiohttp>=3.10.5,<3.11
-# serve.py — hf_hub_download() for fine-tunes shipped as bare weights
+# Pinned to moshi's range so installing faster-whisper below cannot resolve it
+# forward past what moshi tolerates (they share this dependency).
 huggingface-hub>=0.24,<0.25
 # asr_server.py — PCM accumulation between transcription windows
 numpy>=1.26,<2.2

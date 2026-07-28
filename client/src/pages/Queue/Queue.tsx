@@ -9,7 +9,6 @@ import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 import { useLocalStorage } from "../Conversation/hooks/useLocalStorage";
 import { useModels, ModelInfo, Status } from "./hooks/useModels";
-import { useScenarios, Scenario } from "./hooks/useScenarios";
 import { useTeardown } from "./hooks/useTeardown";
 
 // Voice presets with human-readable descriptions.
@@ -66,11 +65,6 @@ interface HomepageProps {
   models: ModelInfo[];
   selectedRepo: string;
   setSelectedRepo: (value: string) => void;
-  scenarios: Scenario[];
-  selectedScenarioId: string;
-  setSelectedScenarioId: (value: string) => void;
-  showScenarios: boolean;
-  showVoice: boolean;
   loadedName: string | null;
   switchError: string | null;
   teardownAvailable: boolean;
@@ -88,11 +82,6 @@ const Homepage = ({
   models,
   selectedRepo,
   setSelectedRepo,
-  scenarios,
-  selectedScenarioId,
-  setSelectedScenarioId,
-  showScenarios,
-  showVoice,
   loadedName,
   switchError,
   teardownAvailable,
@@ -162,29 +151,6 @@ const Homepage = ({
           </select>
         </div>
 
-        {showScenarios && (
-          <div className="w-full">
-            <label htmlFor="scenario-select" className="block text-left text-base font-medium text-gray-700 mb-2">
-              Scenario (pharma demo):
-            </label>
-            <select
-              id="scenario-select"
-              value={selectedScenarioId}
-              onChange={(e) => setSelectedScenarioId(e.target.value)}
-              className="w-full p-3 bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
-            >
-              <option value="">No scenario (free conversation)</option>
-              {scenarios.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <p className="text-left text-xs text-gray-500 mt-1">
-              Demo only — not clinically accurate.
-            </p>
-          </div>
-        )}
-
-        {showVoice && (
         <div className="w-full">
           <label htmlFor="voice-prompt" className="block text-left text-base font-medium text-gray-700 mb-2">
             Voice:
@@ -203,7 +169,6 @@ const Homepage = ({
             ))}
           </select>
         </div>
-        )}
 
         {showMicrophoneAccessMessage && (
           <p className="text-center text-red-500">Please enable your microphone before proceeding</p>
@@ -240,14 +205,7 @@ export const Queue:FC = () => {
   const [showMicrophoneAccessMessage, setShowMicrophoneAccessMessage] = useState<boolean>(false);
   const modelParams = useModelParams();
   const { models, status, refreshStatus } = useModels();
-  const { scenarios } = useScenarios();
   const [selectedRepo, setSelectedRepo] = useLocalStorage<string>("selectedRepo", "");
-  const [selectedScenarioId, setSelectedScenarioId] = useLocalStorage<string>("selectedScenarioId", "");
-  const selectedModel = models.find((m) => m.id === selectedRepo);
-  const showScenarios = !!selectedModel?.supports_scenarios && scenarios.length > 0;
-  const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId);
-  // Models that pin their own voice (pharma's .wav) hide the .pt voice dropdown.
-  const showVoice = !selectedModel?.voice_wav;
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const { available: teardownAvailable, teardown } = useTeardown();
@@ -262,12 +220,6 @@ export const Queue:FC = () => {
     }
     if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
   }, [status, selectedRepo, models, setSelectedRepo]);
-
-  useEffect(() => {
-    if (selectedScenarioId && scenarios.length > 0 && !scenarios.some((s) => s.id === selectedScenarioId)) {
-      setSelectedScenarioId("");
-    }
-  }, [scenarios, selectedScenarioId, setSelectedScenarioId]);
 
   const handleTeardown = useCallback(async () => {
     if (!window.confirm("Destroy this instance? This stops billing and ends the demo.")) return;
@@ -439,8 +391,6 @@ export const Queue:FC = () => {
         theme={theme}
         startConnection={startConnection}
         modelName={status?.display_name ?? null}
-        injections={selectedScenario?.injections}
-        voiceOverride={selectedModel?.voice_wav}
         teardownAvailable={teardownAvailable}
         onTeardown={handleTeardown}
         {...modelParams}
@@ -456,11 +406,6 @@ export const Queue:FC = () => {
           models={models}
           selectedRepo={selectedRepo}
           setSelectedRepo={setSelectedRepo}
-          scenarios={scenarios}
-          selectedScenarioId={selectedScenarioId}
-          setSelectedScenarioId={setSelectedScenarioId}
-          showScenarios={showScenarios}
-          showVoice={showVoice}
           loadedName={status?.display_name ?? null}
           switchError={switchError}
           teardownAvailable={teardownAvailable}

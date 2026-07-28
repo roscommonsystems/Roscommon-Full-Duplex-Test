@@ -11,8 +11,6 @@ import { MediaContext } from "./MediaContext";
 import { ServerInfo } from "./components/ServerInfo/ServerInfo";
 import { ModelParamsValues, useModelParams } from "./hooks/useModelParams";
 import { useTranscript } from "./hooks/useTranscript";
-import { useInjectionScheduler } from "./hooks/useInjectionScheduler";
-import { Injection } from "../Queue/hooks/useScenarios";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { encodeMp3, timestampedFilename } from "./encodeMp3";
@@ -31,8 +29,6 @@ type ConversationProps = {
   isBypass?: boolean;
   startConnection: () => Promise<void>;
   modelName?: string | null;
-  injections?: Injection[];
-  voiceOverride?: string;
   teardownAvailable?: boolean;
   onTeardown?: () => void;
 } & Partial<ModelParamsValues>;
@@ -45,7 +41,6 @@ const buildURL = ({
   email,
   textSeed,
   audioSeed,
-  voiceOverride,
 }: {
   workerAddr: string;
   params: ModelParamsValues;
@@ -53,7 +48,6 @@ const buildURL = ({
   email?: string;
   textSeed: number;
   audioSeed: number;
-  voiceOverride?: string;
 }) => {
   const newWorkerAddr = useMemo(() => {
     if (workerAddr == "same" || workerAddr == "") {
@@ -81,7 +75,7 @@ const buildURL = ({
   url.searchParams.append("repetition_penalty_context", params.repetitionPenaltyContext.toString());
   url.searchParams.append("repetition_penalty", params.repetitionPenalty.toString());
   url.searchParams.append("text_prompt", params.textPrompt.toString());
-  url.searchParams.append("voice_prompt", (voiceOverride || params.voicePrompt).toString());
+  url.searchParams.append("voice_prompt", params.voicePrompt.toString());
   console.log(url.toString());
   return url.toString();
 };
@@ -100,8 +94,6 @@ export const Conversation:FC<ConversationProps> = ({
   email,
   theme,
   modelName,
-  injections,
-  voiceOverride,
   teardownAvailable,
   onTeardown,
   ...params
@@ -138,7 +130,6 @@ export const Conversation:FC<ConversationProps> = ({
     email: email,
     textSeed: textSeed,
     audioSeed: audioSeed,
-    voiceOverride,
   });
 
   const onDisconnect = useCallback(() => {
@@ -153,7 +144,6 @@ export const Conversation:FC<ConversationProps> = ({
     onDisconnect,
   });
   const { turns } = useTranscript(socket);
-  useInjectionScheduler({ socket, socketStatus, injections });
   useEffect(() => {
     audioRecorder.current.ondataavailable = (e) => {
       audioChunks.current.push(e.data);
