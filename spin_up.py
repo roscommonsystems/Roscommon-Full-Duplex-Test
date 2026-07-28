@@ -32,7 +32,7 @@ MIN_GPU_RAM_GB = 32            # model ~19.5GB + a few GB for ASR
 DISK_GB = 100                  # ~16GB of weights + CUDA wheels + client build
 MAX_DOLLARS_PER_HOUR = 1.50    # walk away above this
 MIN_RELIABILITY = 0.90         # vast's 0-1 host score
-MIN_INET_DOWN_MBPS = 200       # the model download is ~16GB; slow hosts hurt
+MIN_INET_DOWN_MBPS = 500       # the model download is ~16GB; slow hosts hurt
 DATACENTER_ONLY = True         # plain host: offers often have firewalled egress
 
 # Hosts to never rent from, by machine_id. vast keeps listing machines whose
@@ -55,6 +55,7 @@ MOSHI_PORT = 8998
 RUNNING_TIMEOUT_MIN = 15       # offer accepted -> container running
 READY_TIMEOUT_MIN = 30         # container running -> model loaded
 POLL_SECONDS = 15
+HEARTBEAT_SECONDS = 60         # print *something* at least this often while waiting
 
 # What to do when provisioning fails, times out, or you Ctrl-C: a rented
 # instance bills whether or not the demo works, and the in-UI "Shut down"
@@ -160,7 +161,15 @@ def find_offers():
     # Filtered here rather than in the query: several offers can share one
     # machine, so excluding by machine_id is what actually keeps a known-bad
     # host from coming back under a different offer id.
-    return [o for o in offers if o.get("machine_id") not in BLOCKED_MACHINE_IDS]
+    offers = [o for o in offers if o.get("machine_id") not in BLOCKED_MACHINE_IDS]
+    # Nearly every matching offer sits at the same bottom price, so the
+    # tiebreak matters: take the fattest pipe among equally-cheap hosts — the
+    # image pull and the model download both ride on it. Sorted here because
+    # the API ignores a second order key (verified: it accepts the syntax but
+    # returns price-sorted offers with inet_down unordered).
+    offers.sort(key=lambda o: (o.get("dph_total") or 9e9,
+                               -(o.get("inet_down") or 0)))
+    return offers
 
 
 def rent(offer_id, onstart):
@@ -253,22 +262,38 @@ class HostStartupError(RuntimeError):
     side can recover from it, and waiting out the timeout only bills for it."""
 
 
+def _elapsed(since):
+    """m:ss since `since`, for prefixing progress lines."""
+    s = int(time.time() - since)
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def wait_for_running(instance_id):
     """Block until the container is running and its port is mapped. Returns
     (ip, port), or None if it never got there in time. Raises HostStartupError
     if the host reports a failure that will not resolve on its own."""
-    deadline = time.time() + RUNNING_TIMEOUT_MIN * 60
-    last = None
+    start = time.time()
+    deadline = start + RUNNING_TIMEOUT_MIN * 60
+    last_shown, last_print = None, 0.0
     while time.time() < deadline:
         inst = get_instance(instance_id)
         if inst is None:
             sys.exit(f"ERROR: instance {instance_id} vanished — check the console.")
         status = inst.get("actual_status") or inst.get("cur_state") or "?"
         message = (inst.get("status_msg") or "").strip()
-        if status != last:
-            print(f"  instance {instance_id}: {status}"
-                  f"{' — ' + message if message else ''}")
-            last = status
+        headline = message.splitlines()[0] if message else ""
+        # Print on any change of status OR message, not just status: the
+        # status sits on "loading" for minutes while status_msg walks through
+        # docker's layer-by-layer pull progress — showing that walk is what
+        # proves it isn't hung. Failing both, heartbeat once a minute.
+        if (status, headline) != last_shown:
+            print(f"  [{_elapsed(start)}] instance {instance_id}: {status}"
+                  f"{' — ' + headline if headline else ''}")
+            last_shown, last_print = (status, headline), time.time()
+        elif time.time() - last_print >= HEARTBEAT_SECONDS:
+            print(f"  [{_elapsed(start)}] still {status} — waiting "
+                  f"(gives up at {RUNNING_TIMEOUT_MIN}:00)")
+            last_print = time.time()
         # A daemon error here is the host telling us the container will never
         # start (bad GPU/CDI wiring, usually). The status itself is no help —
         # it sits on "created", which is also a normal transient state — so the
@@ -298,13 +323,22 @@ def wait_for_model(url):
     ctx = ssl.create_default_context()  # cert is self-signed by design
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    deadline = time.time() + READY_TIMEOUT_MIN * 60
+    start = time.time()
+    deadline = start + READY_TIMEOUT_MIN * 60
+    # The port stays closed until the model is loaded, so there is no signal to
+    # relay from this side — just prove we're alive and what we're waiting on.
+    last_print = time.time()
     while time.time() < deadline:
         try:
             req = urllib.request.Request(url + "/api/status")
             with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 return json.loads(resp.read().decode())
         except Exception:  # noqa: BLE001 — connection refused/reset while loading
+            if time.time() - last_print >= HEARTBEAT_SECONDS:
+                print(f"  [{_elapsed(start)}] port still closed — provision.sh is "
+                      f"installing deps and downloading the ~16GB model "
+                      f"(normal; gives up at {READY_TIMEOUT_MIN}:00)")
+                last_print = time.time()
             time.sleep(POLL_SECONDS)
     return None
 

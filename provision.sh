@@ -67,6 +67,21 @@ if [ "$code" != "200" ]; then
 fi
 echo "HuggingFace reachable (HTTP 200)."
 
+# --- Model prefetch, in the background --------------------------------------
+# The ~16GB model download is the long pole of the whole boot, and nothing
+# below needs it — so start it first and let apt/pip/npm run underneath it.
+# hf_transfer multi-streams the download; the stock client is single-stream
+# and rarely clears ~40MB/s, which alone is 6+ minutes of the wait.
+# serve.py reads the same HF_HOME cache, so a finished prefetch means the
+# server finds every file local; a failed one just means the server downloads
+# whatever is missing itself, exactly as before.
+log "Starting model download in the background (~16GB, overlaps the installs below)"
+uv pip install -q 'huggingface-hub>=0.24,<0.25' hf_transfer
+export HF_HUB_ENABLE_HF_TRANSFER=1
+( huggingface-cli download nvidia/personaplex-7b-v1 \
+    > /workspace/model_download.log 2>&1 ) &
+MODEL_DL_PID=$!
+
 log "Installing system dependencies (opus, portaudio, openssl)"
 apt-get update -qq || true
 apt-get install -y -qq libopus-dev libportaudio2 openssl
@@ -138,6 +153,14 @@ print("torch", torch.__version__, "| CUDA", torch.version.cuda,
       "| GPU capability", torch.cuda.get_device_capability())
 PY
 
+log "Waiting for the background model download to finish"
+if wait "$MODEL_DL_PID"; then
+  echo "Model cache is warm."
+else
+  echo "Prefetch exited nonzero — the server will fetch whatever is missing itself."
+  tail -n 5 /workspace/model_download.log || true
+fi
+
 # --- Launch ----------------------------------------------------------------
 log "Writing run script and launching server (tmux session 'moshi')"
 cat > /workspace/run_moshi.sh <<EOF
@@ -145,6 +168,9 @@ cat > /workspace/run_moshi.sh <<EOF
 source $VENV/bin/activate
 export HF_TOKEN=$HF_TOKEN
 export HF_HOME=$HF_HOME
+# Multi-stream HF downloads (installed above) — matters again when switching
+# to a model that isn't cached yet, e.g. the RL fine-tune from models.json.
+export HF_HUB_ENABLE_HF_TRANSFER=1
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
@@ -161,7 +187,7 @@ chmod +x /workspace/run_moshi.sh
 tmux kill-session -t moshi 2>/dev/null || true
 tmux new-session -d -s moshi 'bash /workspace/run_moshi.sh > /workspace/moshi.log 2>&1'
 
-log "Waiting for model to load (first run downloads ~16GB; up to ~10 min)"
+log "Waiting for model to load (cache is warm — this is mostly the load into VRAM)"
 ready=0
 for _ in $(seq 1 90); do
   if grep -q "Model ready:" /workspace/moshi.log 2>/dev/null; then
