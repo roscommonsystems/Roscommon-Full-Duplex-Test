@@ -35,6 +35,13 @@ MIN_RELIABILITY = 0.90         # vast's 0-1 host score
 MIN_INET_DOWN_MBPS = 200       # the model download is ~16GB; slow hosts hurt
 DATACENTER_ONLY = True         # plain host: offers often have firewalled egress
 
+# Hosts to never rent from, by machine_id. vast keeps listing machines whose
+# docker daemon cannot actually hand a container a GPU, and since we always
+# take the cheapest match, one broken machine gets picked every single run.
+# The script prints the id to add here when a host fails to start.
+#   100695 — "failed to inject CDI devices ... /gpu=0: unknown" (2026-07-28)
+BLOCKED_MACHINE_IDS = (100695,)
+
 # --- How to configure it ---
 # IMAGE must be a vast PyTorch image: provision.sh expects its /venv/main
 # virtualenv and a Blackwell-capable torch. If the rental is rejected with an
@@ -140,7 +147,11 @@ def find_offers():
         query["gpu_name"] = {"eq": GPU_NAME.replace("_", " ")}
     if DATACENTER_ONLY:
         query["datacenter"] = {"eq": True}
-    return api("POST", "/v0/bundles/", query).get("offers") or []
+    offers = api("POST", "/v0/bundles/", query).get("offers") or []
+    # Filtered here rather than in the query: several offers can share one
+    # machine, so excluding by machine_id is what actually keeps a known-bad
+    # host from coming back under a different offer id.
+    return [o for o in offers if o.get("machine_id") not in BLOCKED_MACHINE_IDS]
 
 
 def rent(offer_id, onstart):
@@ -220,9 +231,15 @@ def on_failure(instance_id, message):
         print("  Logs:  ssh into it, then tail -f /workspace/moshi.log")
 
 
+class HostStartupError(RuntimeError):
+    """The host's docker daemon refused to start the container. Nothing on our
+    side can recover from it, and waiting out the timeout only bills for it."""
+
+
 def wait_for_running(instance_id):
     """Block until the container is running and its port is mapped. Returns
-    (ip, port), or None if it never got there in time."""
+    (ip, port), or None if it never got there in time. Raises HostStartupError
+    if the host reports a failure that will not resolve on its own."""
     deadline = time.time() + RUNNING_TIMEOUT_MIN * 60
     last = None
     while time.time() < deadline:
@@ -230,10 +247,22 @@ def wait_for_running(instance_id):
         if inst is None:
             sys.exit(f"ERROR: instance {instance_id} vanished — check the console.")
         status = inst.get("actual_status") or inst.get("cur_state") or "?"
+        message = (inst.get("status_msg") or "").strip()
         if status != last:
             print(f"  instance {instance_id}: {status}"
-                  f"{' — ' + inst['status_msg'].strip() if inst.get('status_msg') else ''}")
+                  f"{' — ' + message if message else ''}")
             last = status
+        # A daemon error here is the host telling us the container will never
+        # start (bad GPU/CDI wiring, usually). The status itself is no help —
+        # it sits on "created", which is also a normal transient state — so the
+        # message is what distinguishes a dead box from a slow one.
+        if "Error response from daemon" in message:
+            raise HostStartupError(
+                f"host {inst.get('machine_id')} could not start the container.\n"
+                f"  {message.splitlines()[0]}\n"
+                f"  This is the host's fault, not the demo's — re-run to get a "
+                f"different one, and add {inst.get('machine_id')} to "
+                f"BLOCKED_MACHINE_IDS at the top of this file to stop picking it.")
         ip, port = endpoint(inst)
         if status == "running" and ip and port:
             return ip, port
