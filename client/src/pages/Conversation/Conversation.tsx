@@ -14,19 +14,13 @@ import { useTranscript } from "./hooks/useTranscript";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
 import { encodeMp3, timestampedFilename } from "./encodeMp3";
-import { type ThemeType } from "./hooks/useSystemTheme";
+import { type ThemeType } from "./hooks/theme";
 
 type ConversationProps = {
   workerAddr: string;
-  workerAuthId?: string;
-  sessionAuthId?: string;
-  sessionId?: number;
-  email?: string;
   theme: ThemeType;
   audioContext: MutableRefObject<AudioContext|null>;
   worklet: MutableRefObject<AudioWorkletNode|null>;
-  onConversationEnd?: () => void;
-  isBypass?: boolean;
   startConnection: () => Promise<void>;
   modelName?: string | null;
   teardownAvailable?: boolean;
@@ -37,15 +31,11 @@ type ConversationProps = {
 const buildURL = ({
   workerAddr,
   params,
-  workerAuthId,
-  email,
   textSeed,
   audioSeed,
 }: {
   workerAddr: string;
   params: ModelParamsValues;
-  workerAuthId?: string;
-  email?: string;
   textSeed: number;
   audioSeed: number;
 }) => {
@@ -59,12 +49,6 @@ const buildURL = ({
   }, [workerAddr]);
   const wsProtocol = (window.location.protocol === 'https:') ? 'wss' : 'ws';
   const url = new URL(`${wsProtocol}://${newWorkerAddr}/api/chat`);
-  if(workerAuthId) {
-    url.searchParams.append("worker_auth_id", workerAuthId);
-  }
-  if(email) {
-    url.searchParams.append("email", email);
-  }
   url.searchParams.append("text_temperature", params.textTemperature.toString());
   url.searchParams.append("text_topk", params.textTopk.toString());
   url.searchParams.append("audio_temperature", params.audioTemperature.toString());
@@ -83,15 +67,9 @@ const buildURL = ({
 
 export const Conversation:FC<ConversationProps> = ({
   workerAddr,
-  workerAuthId,
   audioContext,
   worklet,
-  sessionAuthId,
-  sessionId,
-  onConversationEnd,
   startConnection,
-  isBypass=false,
-  email,
   theme,
   modelName,
   teardownAvailable,
@@ -126,8 +104,6 @@ export const Conversation:FC<ConversationProps> = ({
   const WSURL = buildURL({
     workerAddr,
     params: modelParams,
-    workerAuthId,
-    email: email,
     textSeed: textSeed,
     audioSeed: audioSeed,
   });
@@ -204,7 +180,7 @@ export const Conversation:FC<ConversationProps> = ({
     return () => {
       stop();
     };
-  }, [start, workerAuthId]);
+  }, [start]);
 
   const startRecording = useCallback(() => {
     if(isRecording.current) {

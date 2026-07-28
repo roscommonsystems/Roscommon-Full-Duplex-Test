@@ -1,7 +1,7 @@
 import { FC, RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { clamp } from "../../hooks/audioUtils";
 import { useSocketContext } from "../../SocketContext";
-import { type ThemeType } from "../../hooks/useSystemTheme";
+import { type ThemeType } from "../../hooks/theme";
 
 type AudioVisualizerProps = {
   analyser: AnalyserNode | null;

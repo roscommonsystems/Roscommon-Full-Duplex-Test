@@ -2,7 +2,7 @@ import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { useSocketContext } from "../../SocketContext";
 import { useUserAudio } from "../../hooks/useUserAudio";
 import { ClientVisualizer } from "../AudioVisualizer/ClientVisualizer";
-import { type ThemeType } from "../../hooks/useSystemTheme";
+import { type ThemeType } from "../../hooks/theme";
 
 type UserAudioProps = {
   theme: ThemeType;

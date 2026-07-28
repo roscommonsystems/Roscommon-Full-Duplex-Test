@@ -1,20 +1,30 @@
-# moshi-client
+# Web client
 
-Frontend for the demo.
+React/Vite frontend for the demo. `provision.sh` builds it on the instance and
+[`serve.py`](../serve.py) serves the resulting `dist/` from the same port it
+proxies `/api` on, so in normal use there is nothing to do here by hand.
 
-## Run the client
+## Developing it locally
 
-- Node is required, I recommend using [NVM](https://github.com/nvm-sh/nvm) to help you manage your node version and make sure you're on the recommended version for this project. If you do so run `nvm use`.
-- Generate a public/private key pair, `cert.pem` and `key.pem` and copy it to the at the root of this package
-- Create an env.local file and add your an entry for `VITE_QUEUE_API_PATH` (default should be `/api`)
-- Before running the project for the time or after dependencies update use `npm install`
-- To run the project use `npm run dev`
-- To build the project use `npm run build`
+```bash
+nvm use          # the version in .nvmrc
+npm install
+npm run dev      # http://localhost:5173
+```
 
-## Skipping the queue
-To skip the queue for standalone use, once the project is running go to `/?worker_addr={WORKER_ADDR}` where `WORKER_ADDR` is your worker instance address.
-For example : `https://localhost:5173/?worker_addr=0.0.0.0:8088`
+The dev server needs a backend for `/api` (models, status, the chat websocket).
+Two ways to get one:
+
+- Point the page straight at an instance: `http://localhost:5173/?worker_addr=<host:port>`.
+- Or set `VITE_QUEUE_API_URL` in [`.env.local`](./.env.local) to a running
+  `serve.py` and let Vite proxy `/api` there.
+
+Mic access needs a secure context. `localhost` counts as one, so plain HTTP is
+fine for dev — drop a `cert.pem`/`key.pem` pair in this directory only if you
+need to reach the dev server from another machine, and Vite will serve HTTPS.
+
+`npm run build` type-checks and writes `dist/`. `npm test` runs the vitest suite.
 
 ## License
 
-The present code is provided under the MIT license.
+Derived from Kyutai's moshi client, MIT — see [LICENSE](./LICENSE).
