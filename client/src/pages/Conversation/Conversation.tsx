@@ -15,6 +15,7 @@ import { useInjectionScheduler } from "./hooks/useInjectionScheduler";
 import { Injection } from "../Queue/hooks/useScenarios";
 import fixWebmDuration from "webm-duration-fix";
 import { getMimeType, getExtension } from "./getMimeType";
+import { encodeMp3, timestampedFilename } from "./encodeMp3";
 import { type ThemeType } from "./hooks/useSystemTheme";
 
 type ConversationProps = {
@@ -119,7 +120,9 @@ export const Conversation:FC<ConversationProps> = ({
   const audioStreamDestination = useRef<MediaStreamAudioDestinationNode>(audioContext.current!.createMediaStreamDestination());
   const stereoMerger = useRef<ChannelMergerNode>(audioContext.current!.createChannelMerger(2));
   const audioRecorder = useRef<MediaRecorder>(new MediaRecorder(audioStreamDestination.current.stream, { mimeType: getMimeType("audio"), audioBitsPerSecond: 128000  }));
-  const [audioURL, setAudioURL] = useState<string>("");
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [encodingProgress, setEncodingProgress] = useState<number | null>(null);
+  const mp3Blob = useRef<Blob | null>(null);
   const [isOver, setIsOver] = useState(false);
   const modelParams = useModelParams(params);
   const micDuration = useRef<number>(0);
@@ -163,11 +166,47 @@ export const Conversation:FC<ConversationProps> = ({
         } else {
           blob = new Blob(audioChunks.current, { type: mimeType });
       }
-      setAudioURL(URL.createObjectURL(blob));
+      mp3Blob.current = null;
+      setRecordedBlob(blob);
       audioChunks.current = [];
       console.log("Audio Recording and encoding finished");
     };
-  }, [audioRecorder, setAudioURL, audioChunks]);
+  }, [audioRecorder, setRecordedBlob, audioChunks]);
+
+  // The recording is re-encoded to MP3 on demand: MediaRecorder only gives us
+  // webm/opus (or mp4/aac on Safari), and encoding a long conversation costs a
+  // few seconds, so it happens on click rather than as soon as recording stops.
+  const onDownloadAudio = useCallback(async () => {
+    if (!recordedBlob || encodingProgress !== null) {
+      return;
+    }
+    let blob = mp3Blob.current;
+    let extension = "mp3";
+    if (!blob) {
+      setEncodingProgress(0);
+      try {
+        const decoded = await audioContext.current!.decodeAudioData(await recordedBlob.arrayBuffer());
+        blob = await encodeMp3(decoded, setEncodingProgress);
+        mp3Blob.current = blob;
+      } catch (error) {
+        // Fall back to the raw recording rather than leaving no way to save it.
+        console.error("MP3 encoding failed, downloading the raw recording instead", error);
+        blob = recordedBlob;
+        extension = getExtension("audio");
+      } finally {
+        setEncodingProgress(null);
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = timestampedFilename("personaplex_audio", extension);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoking straight away can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }, [recordedBlob, encodingProgress, audioContext, setEncodingProgress]);
 
 
   useEffect(() => {
@@ -195,7 +234,8 @@ export const Conversation:FC<ConversationProps> = ({
     // Connect merger to the MediaStream destination
     stereoMerger.current.connect(audioStreamDestination.current);
 
-    setAudioURL("");
+    setRecordedBlob(null);
+    mp3Blob.current = null;
     audioRecorder.current.start();
     isRecording.current = true;
   }, [isRecording, worklet, audioStreamDestination, audioRecorder, stereoMerger]);
@@ -306,7 +346,20 @@ export const Conversation:FC<ConversationProps> = ({
               />
               <UserAudio theme={theme}/>
               <div className="pt-8 text-sm flex justify-center items-center flex-col download-links">
-                {audioURL && <div><a href={audioURL} download={`personaplex_audio.${getExtension("audio")}`} className="pt-2 text-center block">Download audio</a></div>}
+                {recordedBlob && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={onDownloadAudio}
+                      disabled={encodingProgress !== null}
+                      className="pt-2 text-center block disabled:opacity-60"
+                    >
+                      {encodingProgress !== null
+                        ? `Preparing MP3… ${Math.round(encodingProgress * 100)}%`
+                        : "Download audio (MP3)"}
+                    </button>
+                  </div>
+                )}
               </div>
           </div>
           <div className="scrollbar player-text" ref={textContainerRef}>
