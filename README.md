@@ -102,7 +102,7 @@ which is why 32 GB is the practical minimum:
 
 ---
 
-## Configuration
+## 4. Configuration
 
 There are no command-line flags. Each entry point is configured by a block of
 constants at the top of the file — edit them in place and restart:
@@ -119,7 +119,7 @@ environment (on the instance) or `.env` (for `spin_up.py`).
 
 ---
 
-## 4. Useful commands (on the instance)
+## 5. Useful commands (on the instance)
 
 ```bash
 tail -f /workspace/moshi.log     # server logs
@@ -127,7 +127,7 @@ tmux attach -t moshi             # attach to the server session
 bash /workspace/run_moshi.sh     # restart the server only
 ```
 
-## 5. Stopping / cleanup
+## 6. Stopping / cleanup
 
 - Easiest: click **Shut down instance** in the UI.
 - Or destroy the instance from the vast.ai console (the ■/trash controls).
@@ -167,16 +167,27 @@ itself.
 
 ## How `provision.sh` works
 
-1. Verifies `HF_TOKEN` is set.
+1. Verifies `HF_TOKEN` is set and activates the image's `/venv/main`.
 2. **Egress-tests Hugging Face** (refuses to continue on a firewalled host).
-3. Installs system deps (`libopus-dev`, `libportaudio2`).
-4. Clones the [PersonaPlex repo](https://github.com/NVIDIA/personaplex).
-5. Installs `moshi` with `--no-deps`, then adds its other deps — see note below.
-6. Installs the app's deps from `requirements.txt` (aiohttp, faster-whisper, … plus the
-   test packages — see [Running the tests](#running-the-tests)).
-7. Sanity-checks that torch sees the GPU.
-8. Launches the Moshi server in a `tmux` session on `0.0.0.0:8998`.
-9. Waits for the model to load, then prints the public URL.
+3. **Starts the ~16 GB model download in the background.** It's the long pole of the
+   boot and nothing below needs it, so everything else runs underneath it.
+4. Installs system deps (`libopus-dev`, `libportaudio2`, `openssl`).
+5. Clones the [PersonaPlex repo](https://github.com/NVIDIA/personaplex), then this repo
+   (for `serve.py`, `supervisor/`, `models.json` and the client). Both are re-runnable:
+   an existing clone is pulled, not re-cloned.
+6. Installs `moshi` with `--no-deps`, then adds its other deps — see note below.
+7. Installs the app's deps from `requirements.txt` (aiohttp, faster-whisper, … plus the
+   test packages — see [Running the tests](#running-the-tests)), followed by
+   `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` for faster-whisper's GPU path.
+8. Installs Node 20 and builds the web client (`npm install && npm run build`);
+   `serve.py` serves the resulting `dist/`.
+9. Sanity-checks that torch sees the GPU, then waits for the background download.
+10. Kicks off a background prefetch of the *other* models in `models.json`, so switching
+    models in the UI doesn't have to download weights first. Detached and non-gating —
+    a model whose license you haven't accepted just stays cold.
+11. Writes `/workspace/run_moshi.sh` and launches `serve.py` in a `tmux` session on
+    `0.0.0.0:8998`.
+12. Waits for the model to load, then prints the public URL.
 
 ### Note: the Blackwell (RTX 5090) gotcha
 

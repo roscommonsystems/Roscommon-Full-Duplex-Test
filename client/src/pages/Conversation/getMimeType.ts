@@ -1,25 +1,6 @@
-export const mimeTypeCheck = () => {
-  const types = [
-    "audio/ogg",
-    "audio/wav",
-    "audio/webm;codecs=opus",
-    "audio/webm;codecs=pcm",
-    "audio/webm;codecs=pcm_s16le",
-    "audio/webm;codecs=pcm_f32le",
-    "audio/mp3",
-    "audio/aac",
-    "audio/mp4",
-    "audio/webm",
-    "audio/mpeg",
-    "video/mp4",
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
-  for (const mime of types) {
-      console.log(mime, MediaRecorder.isTypeSupported(mime));
-  }
-}
+// What MediaRecorder will actually record in, which differs by browser (webm on
+// Chrome/Firefox, mp4 on Safari). Downloads are re-encoded to MP3 from whichever
+// of these we get — see encodeMp3.ts.
 
 const getVideoMimeType = () => {
   if (!MediaRecorder.isTypeSupported){
@@ -44,7 +25,7 @@ const getAudioMimeType = () => {
   }
   if (MediaRecorder.isTypeSupported("audio/mpeg")) {
     return "audio/mpeg";
-  }``
+  }
   if (MediaRecorder.isTypeSupported("audio/mp4")) {
     return "audio/mp4";
   }

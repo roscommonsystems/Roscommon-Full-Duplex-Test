@@ -105,9 +105,7 @@ export const useUserAudio = ({
       };
 
       if (recorder.current) {
-        // setTimeout(() => {recorder.current.start(); setStatus(UserMediaStatuses.RECORDING);}, 1500);
         recorder.current.start();
-
       }
 
       return {

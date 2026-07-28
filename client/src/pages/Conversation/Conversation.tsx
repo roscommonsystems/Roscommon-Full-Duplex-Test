@@ -115,7 +115,6 @@ export const Conversation:FC<ConversationProps> = ({
   }, [setIsOver]);
 
   const { socketStatus, sendMessage, socket, start, stop } = useSocket({
-    // onMessage,
     uri: WSURL,
     onDisconnect,
   });
@@ -342,7 +341,3 @@ export const Conversation:FC<ConversationProps> = ({
     </SocketContext.Provider>
   );
 };
-
-        // </MediaContext.Provider> : undefined}
-        // 
-        // }></MediaContext.Provider>

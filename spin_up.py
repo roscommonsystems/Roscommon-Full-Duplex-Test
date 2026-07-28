@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """spin_up.py — rent a vast.ai GPU and bring the demo up, in one command.
 
-The supported way to deploy the demo (see README.md section 3). It:
+The supported way to deploy the demo (see README.md section 2). It:
 
   1. searches vast.ai for the cheapest offer matching the constants below,
   2. rents it with provision.sh as the on-start script and your tokens injected
@@ -67,9 +67,10 @@ DESTROY_ON_FAILURE = "ask"
 # ==========================================================================
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-# Paths below carry their own /v0 or /v1: vast is retiring v0 one endpoint at
-# a time (listing instances has already moved), so the version is part of each
-# call rather than a shared prefix that silently applies to the wrong ones.
+# The API version lives in each path below rather than here: vast is retiring
+# v0 an endpoint at a time, so when the first call moves it changes on its own
+# instead of dragging a shared prefix across the ones that haven't. Everything
+# we call is still v0.
 VAST_API_BASE = "https://console.vast.ai/api"
 
 # Passed into the container. VAST_API_KEY is what rents the instance in the

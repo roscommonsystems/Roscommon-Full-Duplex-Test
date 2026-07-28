@@ -89,11 +89,6 @@ export const useSocket = ({
         socketRef.current = null;
       }
       setSocketStatus("disconnected");
-      // if (onDisconnectProp) {
-      //   onDisconnectProp();
-      // }
-      // socket?.close();
-      // setSocket(null);
   }, []);
 
   useEffect(() => {
@@ -102,14 +97,13 @@ export const useSocket = ({
     }
     const intervalId = setInterval(() => {
       if (lastMessageTime.current && Date.now() - lastMessageTime.current > 10000) {
+        // close() fires the close event, which runs onDisconnect for us.
         console.log("closing socket due to inactivity", socketRef.current);
         socketRef.current?.close();
-        // onDisconnect();
       }
     }, 500);
 
     return () => {
-      // lastMessageTime.current = null;
       clearInterval(intervalId);
     };
   }, [socketStatus, onDisconnect]);

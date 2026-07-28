@@ -281,12 +281,12 @@ export const Queue:FC = () => {
     worklet.current.connect(ctx.destination);
   }, [audioContext, worklet]);
 
+  // The model params are already in modelParams by this point; Conversation
+  // reads them from there. getMicrophoneAccess records its own result in state
+  // (and surfaces the "allow the mic" message), so nothing to do with it here.
   const startConnection = useCallback(async() => {
       await startProcessor();
-      const hasAccess = await getMicrophoneAccess();
-      if (hasAccess) {
-      // Values are already set in modelParams, they get passed to Conversation
-    }
+      await getMicrophoneAccess();
   }, [startProcessor, getMicrophoneAccess]);
 
   // Poll /api/status until the supervisor settles on "ready" or "error".
