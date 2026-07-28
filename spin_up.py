@@ -26,7 +26,7 @@ import urllib.request
 # Edit in place. Secrets belong in .env, never here.
 
 # --- What to rent ---
-GPU_NAME = "RTX_5090"          # vast's gpu_name; underscores, not spaces
+GPU_NAME = "RTX 5090"          # vast's gpu_name; "RTX 5090" or "RTX_5090" both work
 NUM_GPUS = 1
 MIN_GPU_RAM_GB = 32            # model ~19.5GB + a few GB for ASR
 DISK_GB = 100                  # ~16GB of weights + CUDA wheels + client build
@@ -131,23 +131,32 @@ def find_offers():
         "limit": 20,
     }
     if GPU_NAME:
-        query["gpu_name"] = {"eq": GPU_NAME}
+        # The vast CLI writes gpu_name with underscores and swaps them for
+        # spaces before it calls the API; the HTTP API itself does not, and
+        # matches "RTX 5090" exactly — an underscore silently returns nothing.
+        query["gpu_name"] = {"eq": GPU_NAME.replace("_", " ")}
     if DATACENTER_ONLY:
         query["datacenter"] = {"eq": True}
     return api("POST", "/bundles/", query).get("offers") or []
 
 
 def rent(offer_id, onstart):
-    """Rent an offer. Tokens ride in as docker -e flags; MOSHI_PORT is the
-    only port we publish (vast maps it to a random external one)."""
-    flags = [f"-p {MOSHI_PORT}:{MOSHI_PORT}"]
-    flags += [f"-e {name}={os.environ[name]}" for name in REQUIRED_SECRETS
-              if os.environ.get(name)]
+    """Rent an offer. Tokens ride in as container env vars; MOSHI_PORT is the
+    only port we publish (vast maps it to a random external one).
+
+    `env` is a dict, in the shape vast's own CLI produces from the docker-style
+    flag string its docs show: `-e NAME=value` becomes a plain NAME->value
+    entry, while `-p host:container` is kept whole as the key with a dummy
+    value. Sending the flag string itself is rejected with "env must be a dict".
+    """
+    env = {f"-p {MOSHI_PORT}:{MOSHI_PORT}": "1"}
+    env.update({name: os.environ[name] for name in REQUIRED_SECRETS
+                if os.environ.get(name)})
     body = {
         "image": IMAGE,
         "disk": DISK_GB,
         "onstart": onstart,
-        "env": " ".join(flags),
+        "env": env,
         "runtype": RUNTYPE,
         "label": LABEL,
     }
