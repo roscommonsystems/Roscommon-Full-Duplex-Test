@@ -36,8 +36,10 @@ export const useModelParams = (params?:useModelParamsArgs) => {
   const [padMult, setPadMultBase] = useState(params?.padMult || DEFAULT_PAD_MULT);
   const [repetitionPenalty, setRepetitionPenaltyBase] = useState(params?.repetitionPenalty || DEFAULT_REPETITION_PENALTY);
   const [repetitionPenaltyContext, setRepetitionPenaltyContextBase] = useState(params?.repetitionPenaltyContext || DEFAULT_REPETITION_PENALTY_CONTEXT);
-  const [textPrompt, setTextPromptBase] = useState(params?.textPrompt || DEFAULT_TEXT_PROMPT);
-  const [voicePrompt, setVoicePromptBase] = useState(params?.voicePrompt || DEFAULT_VOICE_PROMPT);
+  // Persisted: "New Conversation" reloads the page, and losing a prompt you
+  // typed out on every reload is worse than remembering it.
+  const [textPrompt, setTextPromptBase] = useLocalStorage('textPrompt', params?.textPrompt || DEFAULT_TEXT_PROMPT);
+  const [voicePrompt, setVoicePromptBase] = useLocalStorage('voicePrompt', params?.voicePrompt || DEFAULT_VOICE_PROMPT);
   const [randomSeed, setRandomSeedBase] = useLocalStorage('randomSeed', params?.randomSeed || DEFAULT_RANDOM_SEED);
 
   const resetParams = useCallback(() => {

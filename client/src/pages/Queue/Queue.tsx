@@ -7,6 +7,7 @@ import { Button } from "../../components/Button/Button";
 import { useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
+import { useLocalStorage } from "../Conversation/hooks/useLocalStorage";
 import { useModels, ModelInfo, Status } from "./hooks/useModels";
 import { useScenarios, Scenario } from "./hooks/useScenarios";
 import { useTeardown } from "./hooks/useTeardown";
@@ -240,8 +241,8 @@ export const Queue:FC = () => {
   const modelParams = useModelParams();
   const { models, status, refreshStatus } = useModels();
   const { scenarios } = useScenarios();
-  const [selectedRepo, setSelectedRepo] = useState<string>("");
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
+  const [selectedRepo, setSelectedRepo] = useLocalStorage<string>("selectedRepo", "");
+  const [selectedScenarioId, setSelectedScenarioId] = useLocalStorage<string>("selectedScenarioId", "");
   const selectedModel = models.find((m) => m.id === selectedRepo);
   const showScenarios = !!selectedModel?.supports_scenarios && scenarios.length > 0;
   const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId);
@@ -253,8 +254,20 @@ export const Queue:FC = () => {
   const [destroyed, setDestroyed] = useState(false);
   const [teardownError, setTeardownError] = useState<string | null>(null);
   useEffect(() => {
+    // A remembered model that the server no longer offers falls back to whatever
+    // is currently loaded, otherwise the dropdown would show a stale selection.
+    if (selectedRepo && models.length > 0 && !models.some((m) => m.id === selectedRepo)) {
+      setSelectedRepo(status?.current_repo ?? "");
+      return;
+    }
     if (!selectedRepo && status?.current_repo) setSelectedRepo(status.current_repo);
-  }, [status, selectedRepo]);
+  }, [status, selectedRepo, models, setSelectedRepo]);
+
+  useEffect(() => {
+    if (selectedScenarioId && scenarios.length > 0 && !scenarios.some((s) => s.id === selectedScenarioId)) {
+      setSelectedScenarioId("");
+    }
+  }, [scenarios, selectedScenarioId, setSelectedScenarioId]);
 
   const handleTeardown = useCallback(async () => {
     if (!window.confirm("Destroy this instance? This stops billing and ends the demo.")) return;
