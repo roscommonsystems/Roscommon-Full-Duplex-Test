@@ -6,8 +6,8 @@ speech-to-speech conversational model (built on Kyutai's Moshi architecture) —
 this unaided.
 
 The demo ships two models: **PersonaPlex (Original)** and **PersonaPlex RL Seamless**,
-both selectable from the in-UI dropdown. The whole setup is automated by
-[`provision.sh`](./provision.sh).
+both selectable from the in-UI dropdown. One command does the whole thing:
+[`spin_up.py`](./spin_up.py) rents a GPU and provisions it.
 
 ---
 
@@ -25,51 +25,19 @@ both selectable from the in-UI dropdown. The whole setup is automated by
 ### vast.ai (per person)
 
 1. Create a vast.ai account and **load credits**.
-2. Add your **SSH public key**: Account → SSH Keys (so you can SSH into instances).
-3. Create an **API key**: https://cloud.vast.ai/manage-keys/ → this is your
-   `VAST_API_KEY`. Required for the zero-click `spin_up.py` path; otherwise optional,
-   where it only enables the in-UI "Shut down instance" button.
+2. Create an **API key**: https://cloud.vast.ai/manage-keys/ → this is your
+   `VAST_API_KEY`. Keys default to full account access —
+   [`.env.example`](./.env.example) spells out the minimum permission grid to tick
+   instead.
+3. Add your **SSH public key**: Account → SSH Keys. Not needed to deploy, but it's how
+   you read `/workspace/moshi.log` when a host misbehaves.
 
 > Tokens and license acceptance are per-account — each person needs their own.
 > (This repo is public, so nothing is needed to clone it.)
 
 ---
 
-## 2. Rent the GPU
-
-In the vast.ai console, pick an offer with:
-
-- **GPU: RTX 5090 (32 GB) is the default and recommended card.** The model uses
-  ~19.5 GB and the live transcription (ASR) adds a few GB, so 32 GB is the practical
-  minimum.
-- **A `datacenter:` offer**, not a plain `host:` one. Many hobbyist `host:` machines
-  have firewalled outbound internet and cannot download the model from Hugging Face.
-  `provision.sh` egress-tests before doing anything and will tell you to swap hosts if
-  it lands on a bad one.
-- **Image:** PyTorch (Vast) — e.g. `vastai/pytorch_cuda-13.2.1-auto/jupyter`.
-- **Disk:** ~100 GB.
-- **Expose port `8998`** in the Docker/launch options.
-
-*(`spin_up.py` below rents the GPU for you and skips this step entirely.)*
-
----
-
-## 3. Deploy
-
-### Hands-free — paste `provision.sh` into the console
-
-1. In the instance config, add an env var: `HF_TOKEN=hf_xxxxxxxx`, plus optionally
-   `VAST_API_KEY=xxxxxxxx` for the **Shut down instance** button.
-2. Paste the contents of `provision.sh` into vast.ai's **On-start Script** box.
-3. Make sure port `8998` is exposed.
-
-The instance boots with PersonaPlex already serving — no SSH needed. (Downside: if it
-lands on a bad host it fails silently at boot, and you see nothing until you SSH in and
-read `/workspace/moshi.log`.)
-
-### Zero-click (`spin_up.py`, from your laptop) — recommended
-
-Rents the GPU *and* provisions it, so you never touch the console — skips step 2:
+## 2. Deploy
 
 ```bash
 cp .env.example .env    # fill in VAST_API_KEY and HF_TOKEN
@@ -77,21 +45,37 @@ python spin_up.py
 ```
 
 It picks the cheapest offer matching the constants at the top of
-[`spin_up.py`](./spin_up.py) (GPU, VRAM, price ceiling, datacenter-only), rents it with
-`provision.sh` as the on-start script, waits for the model to load, and prints the URL.
-Stdlib only — nothing to install.
+[`spin_up.py`](./spin_up.py), rents it with `provision.sh` as the on-start script, waits
+for the model to load, and prints the URL. Stdlib only — nothing to install, and you
+never touch the vast.ai console.
 
 **This spends money without further prompting** — billing starts the moment it rents.
 `MAX_DOLLARS_PER_HOUR` is your ceiling; the offer list is printed before it commits.
 
+### What it rents, and why
+
+The constants encode the requirements you'd otherwise have to remember when picking a
+box by hand — edit them in place if you need something different:
+
+- **`GPU_NAME` / `MIN_GPU_RAM_GB`** — RTX 5090, 32 GB. The model uses ~19.5 GB and the
+  live transcription (ASR) adds a few GB, so 32 GB is the practical minimum.
+- **`DATACENTER_ONLY`** — many hobbyist `host:` machines have firewalled outbound
+  internet and cannot download the model from Hugging Face at all.
+- **`DISK_GB`** — ~16 GB of weights, plus CUDA wheels and the client build.
+- **`IMAGE`** — must be a vast PyTorch image: `provision.sh` expects its `/venv/main`
+  virtualenv and a Blackwell-capable torch.
+- **`MAX_DOLLARS_PER_HOUR`** — your walk-away price.
+
+Port 8998 is published for you. `provision.sh` egress-tests the host before doing
+anything, so a firewalled one fails fast and loudly rather than halfway through a 16 GB
+download.
+
 ---
 
-## 4. Open the demo
+## 3. Open the demo
 
-1. Find the instance's **public IP** and the **external port mapped to 8998** (the
-   vast.ai console shows the mapping). `spin_up.py` prints the full URL for you.
-2. Open `https://<ip>:<port>`.
-3. The TLS cert is self-signed → the browser warns *"your connection is not private"* →
+1. `spin_up.py` prints the URL once the model is ready — open it.
+2. The TLS cert is self-signed → the browser warns *"your connection is not private"* →
    **Advanced → Proceed**, then **Allow microphone**.
 
 Pick a voice/role and start talking. It's real-time: just speak and it replies.
@@ -135,7 +119,7 @@ environment (on the instance) or `.env` (for `spin_up.py`).
 
 ---
 
-## 5. Useful commands (on the instance)
+## 4. Useful commands (on the instance)
 
 ```bash
 tail -f /workspace/moshi.log     # server logs
@@ -143,7 +127,7 @@ tmux attach -t moshi             # attach to the server session
 bash /workspace/run_moshi.sh     # restart the server only
 ```
 
-## 6. Stopping / cleanup
+## 5. Stopping / cleanup
 
 - Easiest: click **Shut down instance** in the UI.
 - Or destroy the instance from the vast.ai console (the ■/trash controls).
@@ -226,5 +210,5 @@ playing TTS over it. This is a custom wrapper, not a built-in feature.
 - One model is loaded in VRAM at a time; switching restarts the model server.
 - The self-signed cert warning is expected; mic access needs the HTTPS (secure)
   context.
-- `VAST_API_KEY` is your vast.ai **account** key (Bearer auth). If unset, the app runs
-  fine — the Shut down button just doesn't appear.
+- `VAST_API_KEY` is your vast.ai **account** key (Bearer auth). `spin_up.py` needs it to
+  rent at all, and forwards it to the instance so the Shut down button works there.
