@@ -30,7 +30,7 @@ GPU_NAME = "RTX 5090"          # vast's gpu_name; "RTX 5090" or "RTX_5090" both 
 NUM_GPUS = 1
 MIN_GPU_RAM_GB = 32            # model ~19.5GB + a few GB for ASR
 DISK_GB = 100                  # ~16GB of weights + CUDA wheels + client build
-MAX_DOLLARS_PER_HOUR = 2.20    # walk away above this
+MAX_DOLLARS_PER_HOUR = 1.50    # walk away above this
 MIN_RELIABILITY = 0.90         # vast's 0-1 host score
 MIN_INET_DOWN_MBPS = 200       # the model download is ~16GB; slow hosts hurt
 DATACENTER_ONLY = True         # plain host: offers often have firewalled egress
@@ -59,7 +59,10 @@ DESTROY_ON_FAILURE = "ask"
 # ==========================================================================
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-VAST_API_BASE = "https://console.vast.ai/api/v0"
+# Paths below carry their own /v0 or /v1: vast is retiring v0 one endpoint at
+# a time (listing instances has already moved), so the version is part of each
+# call rather than a shared prefix that silently applies to the wrong ones.
+VAST_API_BASE = "https://console.vast.ai/api"
 
 # Passed into the container. VAST_API_KEY is what rents the instance in the
 # first place, and rides along so the in-UI "Shut down instance" button works.
@@ -137,7 +140,7 @@ def find_offers():
         query["gpu_name"] = {"eq": GPU_NAME.replace("_", " ")}
     if DATACENTER_ONLY:
         query["datacenter"] = {"eq": True}
-    return api("POST", "/bundles/", query).get("offers") or []
+    return api("POST", "/v0/bundles/", query).get("offers") or []
 
 
 def rent(offer_id, onstart):
@@ -160,17 +163,21 @@ def rent(offer_id, onstart):
         "runtype": RUNTYPE,
         "label": LABEL,
     }
-    result = api("PUT", f"/asks/{offer_id}/", body)
+    result = api("PUT", f"/v0/asks/{offer_id}/", body)
     if not result.get("success") or not result.get("new_contract"):
         sys.exit(f"ERROR: vast refused the rental — {result}")
     return result["new_contract"]
 
 
 def get_instance(instance_id):
-    for inst in api("GET", "/instances/").get("instances") or []:
-        if str(inst.get("id")) == str(instance_id):
-            return inst
-    return None
+    """The instance's record, or None if vast no longer has it.
+
+    Fetching one instance is still v0 — it was only the *collection* listing
+    that moved to /v1, and that one is paginated, so scanning it for our own id
+    would be the long way round. Despite the plural key, the payload here is a
+    single object, not a list.
+    """
+    return api("GET", f"/v0/instances/{instance_id}/").get("instances") or None
 
 
 def endpoint(inst):
@@ -185,7 +192,7 @@ def endpoint(inst):
 
 def destroy(instance_id):
     """Destroy the instance, stopping billing."""
-    if api("DELETE", f"/instances/{instance_id}/", fatal=False) is None:
+    if api("DELETE", f"/v0/instances/{instance_id}/", fatal=False) is None:
         print(f"Could not destroy instance {instance_id} automatically. "
               "Destroy it by hand at https://cloud.vast.ai/instances/ — "
               "it is still billing.")
@@ -307,6 +314,13 @@ def main():
     except KeyboardInterrupt:
         return on_failure(instance_id, "Interrupted — but the instance is rented "
                                        "and billing.")
+    except (SystemExit, Exception) as e:  # noqa: BLE001 — see below
+        # api() reports fatal errors by exiting, and wait_for_running() calls it
+        # on every poll. Without this, a hiccup anywhere in the wait leaves a
+        # rented box billing with nothing on screen offering to destroy it —
+        # the one failure worse than the demo not coming up. Nothing raised
+        # from here is worth more than the prompt, so catch the lot.
+        return on_failure(instance_id, f"Provisioning failed: {e}")
 
     if status is None:
         return on_failure(instance_id,
