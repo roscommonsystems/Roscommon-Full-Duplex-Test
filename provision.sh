@@ -75,22 +75,13 @@ else
   echo "Repo already present at $REPO_DIR — skipping clone."
 fi
 
-# --- Our app repo (private) ------------------------------------------------
-# Needed for serve.py, supervisor/, models.json and the client. When running
-# this script manually you've usually already cloned it (then this is a no-op).
-# For hands-free vast.ai on-start, set GITHUB_TOKEN so the private repo can be
-# cloned non-interactively.
+# --- Our app repo ----------------------------------------------------------
+# Needed for serve.py, supervisor/, models.json and the client. The repo is
+# public, so this clones with no credentials. When running this script manually
+# you've usually already cloned it (then this is a no-op).
 log "Fetching the Roscommon app repo ($APP_DIR)"
 if [ ! -d "$APP_DIR/.git" ]; then
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    git clone --depth 1 "https://${GITHUB_TOKEN}@${APP_REPO}" "$APP_DIR"
-  else
-    echo "ERROR: $APP_DIR is not present and GITHUB_TOKEN is not set."
-    echo "The app repo is private. Either:"
-    echo "  - clone it yourself to $APP_DIR first, then re-run; or"
-    echo "  - set GITHUB_TOKEN=ghp_xxxxxxxx (a token with repo read access) and re-run."
-    exit 1
-  fi
+  git clone --depth 1 "https://${APP_REPO}" "$APP_DIR"
 else
   echo "App repo already present at $APP_DIR — pulling latest."
   git -C "$APP_DIR" pull --ff-only || echo "(pull skipped — local changes or detached HEAD)"

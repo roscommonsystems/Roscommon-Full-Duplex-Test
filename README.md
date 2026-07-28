@@ -30,12 +30,8 @@ both selectable from the in-UI dropdown. The whole setup is automated by
    `VAST_API_KEY`. Required for the zero-click `spin_up.py` path; otherwise optional,
    where it only enables the in-UI "Shut down instance" button.
 
-### GitHub
-
-This repo is **private**, so the instance needs read access to clone it. Create a
-**personal access token** with `repo` (read) scope → this is your `GITHUB_TOKEN`.
-
 > Tokens and license acceptance are per-account — each person needs their own.
+> (This repo is public, so nothing is needed to clone it.)
 
 ---
 
@@ -68,10 +64,9 @@ then:
 
 ```bash
 export HF_TOKEN=hf_xxxxxxxx          # from step 1
-export GITHUB_TOKEN=ghp_xxxxxxxx     # from step 1 (private repo)
 export VAST_API_KEY=xxxxxxxx         # optional — enables the Shut down button
 
-git clone https://$GITHUB_TOKEN@github.com/roscommonsystems/Roscommon-Full-Duplex-Test \
+git clone https://github.com/roscommonsystems/Roscommon-Full-Duplex-Test \
   /workspace/Roscommon-Full-Duplex-Test
 cd /workspace/Roscommon-Full-Duplex-Test
 bash provision.sh
@@ -86,9 +81,8 @@ copy the `https://<ip>:<port>` link it prints at the end.
 
 Once you trust the flow:
 
-1. In the instance config, add env vars: `HF_TOKEN=hf_xxxxxxxx` and
-   `GITHUB_TOKEN=ghp_xxxxxxxx` (the instance has to clone this private repo), plus
-   optionally `VAST_API_KEY=xxxxxxxx` for the **Shut down instance** button.
+1. In the instance config, add an env var: `HF_TOKEN=hf_xxxxxxxx`, plus optionally
+   `VAST_API_KEY=xxxxxxxx` for the **Shut down instance** button.
 2. Paste the contents of `provision.sh` into vast.ai's **On-start Script** box.
 3. Make sure port `8998` is exposed.
 
@@ -101,7 +95,7 @@ confident.)
 Rents the GPU *and* provisions it, so you never touch the console — skips step 2:
 
 ```bash
-cp .env.example .env    # fill in VAST_API_KEY, HF_TOKEN, GITHUB_TOKEN
+cp .env.example .env    # fill in VAST_API_KEY and HF_TOKEN
 python spin_up.py
 ```
 

@@ -61,10 +61,10 @@ DESTROY_ON_FAILURE = "ask"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 VAST_API_BASE = "https://console.vast.ai/api/v0"
 
-# Passed into the container. GITHUB_TOKEN is required because provision.sh has
-# to clone this private repo; VAST_API_KEY is optional and only enables the
-# in-UI "Shut down instance" button.
-REQUIRED_SECRETS = ("VAST_API_KEY", "HF_TOKEN", "GITHUB_TOKEN")
+# Passed into the container. VAST_API_KEY is what rents the instance in the
+# first place, and rides along so the in-UI "Shut down instance" button works.
+# The app repo is public, so nothing is needed to clone it.
+REQUIRED_SECRETS = ("VAST_API_KEY", "HF_TOKEN")
 
 
 def load_dotenv(path):
