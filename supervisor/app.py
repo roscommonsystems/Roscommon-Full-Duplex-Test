@@ -11,9 +11,9 @@ _HOP_BY_HOP = {
 }
 
 # A deployment can ship its own prompt (SYSTEM_PROMPT in .env), which the UI
-# offers as the "Customized" preset. Anything this short isn't one: a leftover
-# `SYSTEM_PROMPT=x` in .env should read as "not configured" rather than put a
-# useless preset in front of whoever is running the demo.
+# starts on and offers as the "Customized" preset. Anything this short isn't
+# one: a leftover `SYSTEM_PROMPT=x` in .env should read as "not configured"
+# rather than become the prompt the demo opens with.
 MIN_SYSTEM_PROMPT_CHARS = 8
 
 
@@ -62,8 +62,9 @@ async def handle_select(request):
 
 
 async def handle_system_prompt(request):
-    """The deployment's own prompt, for the UI's "Customized" preset.
-    available:false (with prompt:null) whenever none was configured."""
+    """The deployment's own prompt — what the UI starts on, and its
+    "Customized" preset. available:false (with prompt:null) whenever none was
+    configured, and the client falls back to its own built-in default."""
     prompt = request.app["_system_prompt"]
     return web.json_response({"available": prompt is not None, "prompt": prompt})
 

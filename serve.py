@@ -27,7 +27,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 HOST = "0.0.0.0"
 PORT = 8998                  # public port — must be exposed on the instance
 CHILD_PORT = 8999            # moshi.server, bound to localhost
-DEFAULT_REPO = "nvidia/personaplex-7b-v1"   # model pre-loaded at boot
+DEFAULT_REPO = "kyutai/personaplex-rl-seamless"   # model pre-loaded at boot
+                             # (provision.sh has its own DEFAULT_REPO for the
+                             # boot prefetch — change both together)
 STATIC_DIR = os.path.join(ROOT, "client", "dist")
 USE_SSL = True               # False serves plain HTTP (local testing only —
                              # the browser needs HTTPS to grant mic access)
@@ -66,7 +68,9 @@ def main():
     if not os.environ.get("HF_TOKEN"):
         sys.exit(
             "ERROR: HF_TOKEN is not set.\n"
-            "  1) Accept the license: https://huggingface.co/nvidia/personaplex-7b-v1\n"
+            "  1) Accept the license for each model in models.json:\n"
+            "       https://huggingface.co/kyutai/personaplex-rl-seamless (default)\n"
+            "       https://huggingface.co/nvidia/personaplex-7b-v1\n"
             "  2) Create a READ token: https://huggingface.co/settings/tokens\n"
             "  3) export HF_TOKEN=hf_xxxxxxxx   (then re-run)"
         )
@@ -87,11 +91,13 @@ def main():
     if ENABLE_ASR:
         asr = AsrChild([sys.executable, os.path.join(ROOT, "asr_server.py")], port=ASR_PORT)
 
-    # Optional deployment prompt, offered in the UI as the "Customized" preset.
-    # It comes from .env via spin_up.py, which forwards it as a container env
-    # var. Both spellings are accepted because Windows upper-cases environment
-    # keys and Linux does not, so a lowercase `system_prompt=` in .env arrives
-    # as SYSTEM_PROMPT from one laptop and system_prompt from another.
+    # Optional deployment prompt. When set it becomes the prompt the UI starts
+    # on, and is also offered as the "Customized" preset; when unset the client
+    # falls back to its own built-in default. It comes from .env via spin_up.py,
+    # which forwards it as a container env var. Both spellings are accepted
+    # because Windows upper-cases environment keys and Linux does not, so a
+    # lowercase `system_prompt=` in .env arrives as SYSTEM_PROMPT from one
+    # laptop and system_prompt from another.
     raw_prompt = os.environ.get("SYSTEM_PROMPT") or os.environ.get("system_prompt")
     system_prompt = normalize_system_prompt(raw_prompt)
     if raw_prompt and not system_prompt:
@@ -99,7 +105,7 @@ def main():
               f"{MIN_SYSTEM_PROMPT_CHARS} characters — ignoring it.", flush=True)
     elif system_prompt:
         print(f'Custom system prompt loaded ({len(system_prompt)} chars) — '
-              f'the UI will offer it as "Customized".', flush=True)
+              f'the UI will start on it, as the "Customized" preset.', flush=True)
 
     app = create_app(registry, child, static_dir=STATIC_DIR, asr=asr,
                      system_prompt=system_prompt)

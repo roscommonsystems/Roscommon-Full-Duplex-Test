@@ -7,7 +7,8 @@
 #
 # PREREQUISITES (one-time, on huggingface.co):
 #   1. Have a HuggingFace account.
-#   2. Accept the model license at:
+#   2. Accept the model license for each model in models.json:
+#        https://huggingface.co/kyutai/personaplex-rl-seamless   (the default)
 #        https://huggingface.co/nvidia/personaplex-7b-v1
 #   3. Create a READ token at:
 #        https://huggingface.co/settings/tokens
@@ -18,7 +19,8 @@
 #   (optional) To cap what the rental can cost you, set VAST_API_KEY as above and:
 #        MAX_RUNTIME_HOURS=24      (the instance destroys itself 24h after boot)
 #
-#   (optional) To ship a prompt of your own, offered in the UI as "Customized":
+#   (optional) To ship a prompt of your own — the UI starts on it, and offers
+#   it as the "Customized" preset:
 #        SYSTEM_PROMPT="You work for ..."   (ignored if <= 8 characters)
 #
 # HOW THIS RUNS:
@@ -42,6 +44,11 @@
 set -euo pipefail
 
 PORT="${MOSHI_PORT:-8998}"
+# The model serve.py pre-loads at boot — prefetched first and gating, while
+# every other model in models.json is warmed in the background afterwards.
+# Must match DEFAULT_REPO in serve.py: this script starts the download before
+# the app repo is even cloned, so it cannot read the value from there.
+DEFAULT_REPO="${DEFAULT_REPO:-kyutai/personaplex-rl-seamless}"
 REPO_DIR="${REPO_DIR:-/workspace/personaplex}"
 APP_DIR="${APP_DIR:-/workspace/Roscommon-Full-Duplex-Test}"
 APP_REPO="${APP_REPO:-github.com/roscommonsystems/Roscommon-Full-Duplex-Test}"
@@ -162,7 +169,9 @@ arm_self_destruct
 # --- 0. Checks -------------------------------------------------------------
 if [ -z "${HF_TOKEN:-}" ]; then
   echo "ERROR: HF_TOKEN is not set."
-  echo "  1) Accept the license: https://huggingface.co/nvidia/personaplex-7b-v1"
+  echo "  1) Accept the license for each model in models.json:"
+  echo "       https://huggingface.co/kyutai/personaplex-rl-seamless (default)"
+  echo "       https://huggingface.co/nvidia/personaplex-7b-v1"
   echo "  2) Make a READ token:  https://huggingface.co/settings/tokens"
   echo "  3) export HF_TOKEN=hf_xxxxxxxx   (then re-run)"
   exit 1
@@ -193,7 +202,7 @@ echo "HuggingFace reachable (HTTP 200)."
 log "Starting model download in the background (~16GB, overlaps the installs below)"
 uv pip install -q 'huggingface-hub>=0.24,<0.25' hf_transfer
 export HF_HUB_ENABLE_HF_TRANSFER=1
-( huggingface-cli download nvidia/personaplex-7b-v1 \
+( huggingface-cli download "$DEFAULT_REPO" \
     > /workspace/model_download.log 2>&1 ) &
 MODEL_DL_PID=$!
 
@@ -283,10 +292,10 @@ fi
 # two never split the pipe while the boot is gated on the default; and fully
 # detached, so provisioning neither waits on them nor fails with them (e.g. a
 # model whose HF license hasn't been accepted just logs and stays cold).
-EXTRA_MODELS="$(python - "$APP_DIR/models.json" <<'PY' || true
+EXTRA_MODELS="$(python - "$APP_DIR/models.json" "$DEFAULT_REPO" <<'PY' || true
 import json, sys
 for m in json.load(open(sys.argv[1])):
-    if m["id"] != "nvidia/personaplex-7b-v1":   # serve.py's DEFAULT_REPO
+    if m["id"] != sys.argv[2]:   # already prefetched above, and gating
         print(m["id"])
 PY
 )"
@@ -304,12 +313,13 @@ source $VENV/bin/activate
 export HF_TOKEN=$HF_TOKEN
 export HF_HOME=$HF_HOME
 # Multi-stream HF downloads (installed above) — matters again when switching
-# to a model that isn't cached yet, e.g. the RL fine-tune from models.json.
+# to a model that isn't cached yet, e.g. the base model from models.json.
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
-# The deployment's own prompt, offered in the UI as "Customized". Quoted with
+# The deployment's own prompt: the UI starts on it and offers it as the
+# "Customized" preset. Quoted with
 # %q, unlike the tokens above, because it is free text: spaces and apostrophes
 # are the normal case here and would otherwise break this generated script.
 export SYSTEM_PROMPT=$(printf '%q' "${SYSTEM_PROMPT:-}")

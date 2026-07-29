@@ -4,7 +4,7 @@ import eruda from "eruda";
 import { useSearchParams } from "react-router-dom";
 import { Conversation } from "../Conversation/Conversation";
 import { Button } from "../../components/Button/Button";
-import { useModelParams } from "../Conversation/hooks/useModelParams";
+import { useModelParams, DEFAULT_TEXT_PROMPT } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 import { useLocalStorage } from "../Conversation/hooks/useLocalStorage";
@@ -44,8 +44,8 @@ type PromptPreset = { label: string; text: string; custom?: boolean };
 
 const TEXT_PROMPT_PRESETS: PromptPreset[] = [
   {
-    label: "Assistant (default)",
-    text: "You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.",
+    label: "Assistant",
+    text: DEFAULT_TEXT_PROMPT,
   },
   {
     label: "Medical office (service)",
@@ -103,6 +103,11 @@ const Homepage = ({
     ? [{ label: "Customized", text: customPrompt, custom: true }, ...TEXT_PROMPT_PRESETS]
     : TEXT_PROMPT_PRESETS;
 
+  // Whichever prompt the textarea starts on — the deployment's own when it has
+  // one, otherwise the built-in. Derived rather than hardcoded onto a label so
+  // the "(default)" marker can never point at the wrong button.
+  const defaultPrompt = customPrompt ?? DEFAULT_TEXT_PROMPT;
+
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
       <div className="mb-6">
@@ -137,7 +142,7 @@ const Homepage = ({
                       : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300")
                   }
                 >
-                  {preset.label}
+                  {preset.text === defaultPrompt ? `${preset.label} (default)` : preset.label}
                 </button>
               ))}
             </div>
@@ -233,6 +238,23 @@ export const Queue:FC = () => {
   const customPrompt = useSystemPrompt();
   const [destroyed, setDestroyed] = useState(false);
   const [teardownError, setTeardownError] = useState<string | null>(null);
+
+  // The deployment's prompt (SYSTEM_PROMPT in .env) is the *default* prompt,
+  // not just one more preset — the textarea starts on it. It arrives from the
+  // server after first paint, so it has to be applied rather than be an initial
+  // value. Remembering which prompt we applied is what stops that from fighting
+  // the operator: a prompt they typed themselves survives every reload, and
+  // only a genuinely different SYSTEM_PROMPT (i.e. a redeploy) takes over the
+  // box again.
+  const [appliedPrompt, setAppliedPrompt] =
+    useLocalStorage<string | null>("appliedSystemPrompt", null);
+  const { setTextPrompt } = modelParams;
+  useEffect(() => {
+    if (!customPrompt || customPrompt === appliedPrompt) return;
+    setTextPrompt(customPrompt);
+    setAppliedPrompt(customPrompt);
+  }, [customPrompt, appliedPrompt, setAppliedPrompt, setTextPrompt]);
+
   useEffect(() => {
     // A remembered model that the server no longer offers falls back to whatever
     // is currently loaded, otherwise the dropdown would show a stale selection.

@@ -94,8 +94,8 @@ VAST_API_BASE = "https://console.vast.ai/api"
 # The app repo is public, so nothing is needed to clone it.
 REQUIRED_SECRETS = ("VAST_API_KEY", "HF_TOKEN")
 
-# Forwarded to the container when .env sets it, never required: the server
-# offers it in the UI as the "Customized" prompt preset. Both spellings are
+# Forwarded to the container when .env sets it, never required: the UI starts
+# on it, and offers it as the "Customized" prompt preset. Both spellings are
 # read because Windows upper-cases environment keys and Linux does not, so a
 # lowercase `system_prompt=` in .env survives either laptop. It always arrives
 # on the instance as SYSTEM_PROMPT.
@@ -402,16 +402,17 @@ def main():
                  "Copy .env.example to .env and fill it in (see README.md step 1).")
 
     # Said out loud before the money is spent: a prompt that silently didn't
-    # make it is only discovered once the demo is up and the preset is missing.
-    # 8 is the server's own threshold (MIN_SYSTEM_PROMPT_CHARS in
+    # make it is only discovered once the demo is up and the wrong prompt is
+    # loaded. 8 is the server's own threshold (MIN_SYSTEM_PROMPT_CHARS in
     # supervisor/app.py); this script stays stdlib-only, so it can't import it.
     prompt = system_prompt()
     if prompt and len(prompt) > 8:
         print(f'Forwarding SYSTEM_PROMPT from .env ({len(prompt)} chars) — '
-              'the UI will offer it as "Customized".')
+              'the UI will start on it, as the "Customized" preset.')
     elif prompt:
         print(f'WARNING: SYSTEM_PROMPT in .env is only {len(prompt)} characters. '
-              'The server ignores anything that short — no "Customized" preset.')
+              'The server ignores anything that short — the demo will open on '
+              'the built-in default prompt instead.')
 
     onstart_path = os.path.join(ROOT, "provision.sh")
     if not os.path.isfile(onstart_path):

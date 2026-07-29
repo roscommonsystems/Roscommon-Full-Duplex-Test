@@ -5,8 +5,9 @@ speech-to-speech conversational model (built on Kyutai's Moshi architecture) —
 [vast.ai](https://vast.ai) GPU instance. Anyone on the team should be able to follow
 this unaided.
 
-The demo ships two models: **PersonaPlex (Original)** and **PersonaPlex RL Seamless**,
-both selectable from the in-UI dropdown. One command does the whole thing:
+The demo ships two models: **PersonaPlex RL Seamless** (loaded at boot) and
+**PersonaPlex (Original)**, both selectable from the in-UI dropdown. One command does
+the whole thing:
 [`spin_up.py`](./spin_up.py) rents a GPU and provisions it.
 
 ---
@@ -17,8 +18,8 @@ both selectable from the in-UI dropdown. One command does the whole thing:
 
 1. Create a Hugging Face account.
 2. **Accept the model licenses** (open each, click agree):
+   - https://huggingface.co/kyutai/personaplex-rl-seamless (RL seamless — the default)
    - https://huggingface.co/nvidia/personaplex-7b-v1 (base)
-   - https://huggingface.co/kyutai/personaplex-rl-seamless (RL seamless)
 3. Create a **READ token**: https://huggingface.co/settings/tokens → this is your
    `HF_TOKEN`.
 
@@ -88,14 +89,16 @@ Pick a voice/role and start talking. It's real-time: just speak and it replies.
 
 ### Using it
 
-- **Model dropdown** — pick PersonaPlex (Original) or RL Seamless. Switching reloads
-  the model (~45 s; you'll see a "Loading…" screen). Original is the best all-round
-  model to show; RL Seamless has smoother turn-taking (its license is non-commercial,
-  internal/demo use only).
+- **Model dropdown** — pick RL Seamless or PersonaPlex (Original). RL Seamless is
+  loaded at boot and is the one to demo — smoother turn-taking and backchanneling
+  (its license is non-commercial, internal/demo use only); Original is the NVIDIA
+  base model. Switching reloads the model (~45 s; you'll see a "Loading…" screen).
 - **Text Prompt / Voice** — set the persona and voice, then **Connect** and talk. The
-  example buttons above the box fill it in for you. If `.env` set a `SYSTEM_PROMPT`, it
-  appears first as a highlighted **Customized** button — that's this deployment's own
-  prompt, carried in from your laptop at rental time.
+  example buttons above the box fill it in for you. If `.env` set a `SYSTEM_PROMPT`,
+  that's the prompt the box already holds when the page opens, and it appears first
+  as a highlighted **Customized (default)** button — this deployment's own prompt,
+  carried in from your laptop at rental time. Edit the box and your version sticks
+  across reloads; only a redeploy with a *different* `SYSTEM_PROMPT` replaces it.
 - **Shut down instance** — button at the bottom, only shown if `VAST_API_KEY` was set.
   Destroys the instance and stops billing. Use this after a demo.
 
@@ -126,11 +129,17 @@ constants at the top of the file — edit them in place and restart:
 `PORT` in `asr_server.py`.** Secrets stay out of all of these — they come from the
 environment (on the instance) or `.env` (for `spin_up.py`).
 
+`DEFAULT_REPO` is the one constant with a second copy: `provision.sh` prefetches the
+boot model before it has cloned this repo, so it can't read the value out of
+`serve.py`. **Change both together** — they're commented to say so. A mismatch isn't
+fatal, it just costs a ~16 GB download at startup instead of a warm cache.
+
 One setting is deliberately not a constant: **`SYSTEM_PROMPT`** lives in `.env` because
 it's per-demo, not per-build. `spin_up.py` forwards it as a container env var,
-`provision.sh` passes it through to `serve.py`, and the UI offers it as the
-**Customized** prompt preset. Anything 8 characters or shorter is treated as unset, so a
-placeholder left in `.env` doesn't put a broken preset in the demo.
+`provision.sh` passes it through to `serve.py`, and the UI opens on it — as well as
+offering it as the **Customized** prompt preset. Anything 8 characters or shorter is
+treated as unset, so a placeholder left in `.env` doesn't become the demo's prompt;
+the client falls back to its own built-in default.
 
 ---
 
