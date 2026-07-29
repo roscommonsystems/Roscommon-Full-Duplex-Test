@@ -50,7 +50,8 @@ for the model to load, and prints the URL. Stdlib only — nothing to install, a
 never touch the vast.ai console.
 
 **This spends money without further prompting** — billing starts the moment it rents.
-`MAX_DOLLARS_PER_HOUR` is your ceiling; the offer list is printed before it commits.
+`MAX_DOLLARS_PER_HOUR` is your ceiling per hour; `MAX_RUNTIME_HOURS` (24 by default) caps
+how many hours there are. The offer list is printed before it commits.
 
 ### What it rents, and why
 
@@ -65,6 +66,11 @@ box by hand — edit them in place if you need something different:
 - **`IMAGE`** — must be a vast PyTorch image: `provision.sh` expects its `/venv/main`
   virtualenv and a Blackwell-capable torch.
 - **`MAX_DOLLARS_PER_HOUR`** — your walk-away price.
+- **`MAX_RUNTIME_HOURS`** — how long the rental is allowed to live, in hours (`24` = a
+  day, `None` = until you shut it down). vast has no server-side rental deadline, so
+  `provision.sh` arms a watchdog on the instance itself that destroys it when the time
+  is up. It is armed before provisioning starts, so it also covers the runs that fail
+  halfway and leave a box billing with no demo on it.
 
 Port 8998 is published for you. `provision.sh` egress-tests the host before doing
 anything, so a firewalled one fails fast and loudly rather than halfway through a 16 GB
@@ -111,7 +117,7 @@ constants at the top of the file — edit them in place and restart:
 |---|---|
 | [`serve.py`](./serve.py) | `PORT`, `CHILD_PORT`, `DEFAULT_REPO` (model pre-loaded at boot), `USE_SSL`, `CPU_OFFLOAD`, `ENABLE_ASR`, `ASR_PORT` |
 | [`asr_server.py`](./asr_server.py) | `PORT`, `MODEL`, `CPU_FALLBACK_MODEL`, `DEVICE`, `WINDOW_SECONDS` |
-| [`spin_up.py`](./spin_up.py) | which GPU to rent, price ceiling, timeouts, `DESTROY_ON_FAILURE` |
+| [`spin_up.py`](./spin_up.py) | which GPU to rent, price ceiling, `MAX_RUNTIME_HOURS`, timeouts, `DESTROY_ON_FAILURE` |
 
 `serve.py` launches `asr_server.py` itself, so **`ASR_PORT` in `serve.py` must match
 `PORT` in `asr_server.py`.** Secrets stay out of all of these — they come from the
@@ -131,6 +137,11 @@ bash /workspace/run_moshi.sh     # restart the server only
 
 - Easiest: click **Shut down instance** in the UI.
 - Or destroy the instance from the vast.ai console (the ■/trash controls).
+- Or let it expire: with `MAX_RUNTIME_HOURS` set, the instance destroys itself when the
+  budget runs out. `spin_up.py` prints the expiry time at the end of a successful run,
+  and on the instance `/workspace/self_destruct.log` records the deadline being hit.
+  To call it off from the instance:
+  `kill $(cat /workspace/self_destruct.pid); rm -f /workspace/self_destruct_deadline`
 - Destroying stops all billing; "Stopping" keeps the disk (small storage charge).
 
 ---

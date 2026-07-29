@@ -57,6 +57,22 @@ READY_TIMEOUT_MIN = 30         # container running -> model loaded
 POLL_SECONDS = 15
 HEARTBEAT_SECONDS = 60         # print *something* at least this often while waiting
 
+# --- How long to keep it ---
+# Wall-clock budget for the rental, in hours (24 = a day; 0.5 works too), or
+# None to run open-endedly until you shut it down yourself.
+#
+# vast has no server-side "rent for N hours" — a contract bills until someone
+# destroys it — so the deadline is armed *inside* the container by provision.sh
+# and holds after this script exits and after you close the laptop. It also
+# covers the failure paths, which is the point: a box that never finished
+# provisioning bills exactly the same as one running the demo, and that's the
+# one nobody remembers to go and destroy.
+#
+# What it does not survive: losing the instance's disk, or the container being
+# stopped rather than running (a stopped instance has nothing to run the timer,
+# though it also bills only for storage).
+MAX_RUNTIME_HOURS = 12
+
 # What to do when provisioning fails, times out, or you Ctrl-C: a rented
 # instance bills whether or not the demo works, and the in-UI "Shut down"
 # button is unreachable when the server never came up. True destroys it,
@@ -186,6 +202,10 @@ def rent(offer_id, onstart):
     env = {f"-p {MOSHI_PORT}:{MOSHI_PORT}": "1"}
     env.update({name: os.environ[name] for name in REQUIRED_SECRETS
                 if os.environ.get(name)})
+    # provision.sh arms the self-destruct from this; unset means "no limit",
+    # which is also what it means when you paste provision.sh in by hand.
+    if MAX_RUNTIME_HOURS:
+        env["MAX_RUNTIME_HOURS"] = str(MAX_RUNTIME_HOURS)
     body = {
         "image": IMAGE,
         "disk": DISK_GB,
@@ -254,6 +274,12 @@ def on_failure(instance_id, message):
         destroy(instance_id)
     else:
         print(f"\nInstance {instance_id} is still running AND BILLING.")
+        if MAX_RUNTIME_HOURS:
+            # provision.sh arms the timer before its own first check, so this
+            # holds for everything except a container that never started.
+            print(f"  Backstop: it destroys itself {MAX_RUNTIME_HOURS}h after the "
+                  "container started, unless it never got as far as running "
+                  "provision.sh.")
         print("  Destroy it at https://cloud.vast.ai/instances/ when you're done.")
         print("  Logs:  ssh into it, then tail -f /workspace/moshi.log")
 
@@ -451,6 +477,13 @@ def main():
     print(f"\n  Web UI:   {url}")
     print("            (self-signed cert: click through the warning, then allow mic)")
     print(f"  Instance: {instance_id}")
+    if MAX_RUNTIME_HOURS:
+        # The watchdog's clock starts when the container did, which is roughly
+        # when we saw it running — hence "~". The exact second is on the
+        # instance, in /workspace/self_destruct_deadline.
+        deadline = time.localtime(running_at + MAX_RUNTIME_HOURS * 3600)
+        print(f"  Expires:  ~{time.strftime('%a %d %b %H:%M', deadline)} "
+              f"({MAX_RUNTIME_HOURS}h budget) — destroys itself then, billing ends")
     print("  Shut down: the button in the UI, or https://cloud.vast.ai/instances/")
 
 

@@ -15,6 +15,9 @@
 #   (optional) For the in-UI "Shut down instance" button, also set:
 #        VAST_API_KEY=<your vast.ai account API key>   (https://cloud.vast.ai/manage-keys/)
 #
+#   (optional) To cap what the rental can cost you, set VAST_API_KEY as above and:
+#        MAX_RUNTIME_HOURS=24      (the instance destroys itself 24h after boot)
+#
 # HOW THIS RUNS:
 #
 #   Normally you never invoke this yourself — spin_up.py passes it to vast.ai
@@ -81,6 +84,77 @@ timing_report(){
     printf '  %4ds  %s\n' "${entry%%|*}" "${entry#*|}"
   done
 }
+
+# --- Self-destruct timer ----------------------------------------------------
+# MAX_RUNTIME_HOURS is a wall-clock budget for the whole rental: a detached
+# watchdog waits it out, then DELETEs this instance through the vast API, which
+# stops billing. spin_up.py sets it as a container env var; unset (or 0) means
+# no limit, which is also what you get pasting this script in by hand.
+#
+# Armed here — before the checks below, before anything can fail — rather than
+# once the server is up, because the runs that most need a backstop are the
+# ones that never get there: a box that exits on a missing HF_TOKEN or a
+# firewalled host bills exactly like one serving the demo, and has nothing
+# running on it to notice.
+#
+# The deadline is kept on the instance's disk, so if the container restarts the
+# watchdog resumes the original deadline instead of granting a fresh budget.
+SELF_DESTRUCT_DEADLINE_FILE=/workspace/self_destruct_deadline
+SELF_DESTRUCT_PID_FILE=/workspace/self_destruct.pid
+SELF_DESTRUCT_LOG=/workspace/self_destruct.log
+
+arm_self_destruct(){
+  local hours="${MAX_RUNTIME_HOURS:-}" id deadline now
+  # awk, not bash arithmetic: the budget may be fractional (0.5 = 30 min).
+  [ -n "$hours" ] && [ "$(awk -v h="$hours" 'BEGIN{print (h + 0 > 0)}')" = "1" ] || return 0
+
+  # Same resolution order as supervisor/teardown.py (the UI's Shut down
+  # button): vast sets CONTAINER_ID, and when it doesn't, the id is the number
+  # inside VAST_CONTAINERLABEL ("C.12345678").
+  id="${CONTAINER_ID:-}"
+  if [ -z "$id" ]; then
+    id="$(printf '%s' "${VAST_CONTAINERLABEL:-}" | grep -o '[0-9][0-9]*' | head -n1)" || true
+  fi
+  if [ -z "${VAST_API_KEY:-}" ] || [ -z "$id" ]; then
+    echo "WARNING: MAX_RUNTIME_HOURS=$hours is set, but VAST_API_KEY and this"
+    echo "         instance's id are not both available — NO self-destruct armed."
+    echo "         This instance bills until you destroy it by hand."
+    return 0
+  fi
+  export VAST_API_KEY   # the watchdog reads it from the environment, see below
+
+  if [ -s "$SELF_DESTRUCT_PID_FILE" ] && kill -0 "$(cat "$SELF_DESTRUCT_PID_FILE")" 2>/dev/null; then
+    echo "Self-destruct watchdog already running (pid $(cat "$SELF_DESTRUCT_PID_FILE"))."
+    return 0
+  fi
+
+  mkdir -p /workspace
+  now="$(date -u +%s)"
+  if [ -s "$SELF_DESTRUCT_DEADLINE_FILE" ]; then
+    deadline="$(cat "$SELF_DESTRUCT_DEADLINE_FILE")"
+  else
+    deadline="$(awk -v n="$now" -v h="$hours" 'BEGIN{printf "%d", n + h * 3600}')"
+    echo "$deadline" > "$SELF_DESTRUCT_DEADLINE_FILE"
+  fi
+
+  # The key is inherited through the environment rather than passed as an
+  # argument: arguments are visible in `ps` to everything else on the box.
+  nohup bash -c '
+    deadline="$1"; id="$2"
+    while [ "$(date -u +%s)" -lt "$deadline" ]; do sleep 30; done
+    echo "$(date -u +%FT%TZ) budget expired — destroying instance $id"
+    code="$(curl -s -m 30 -o /tmp/self_destruct_response -w "%{http_code}" \
+      -X DELETE -H "Authorization: Bearer $VAST_API_KEY" \
+      "https://console.vast.ai/api/v0/instances/$id/")"
+    echo "$(date -u +%FT%TZ) vast API HTTP $code: $(cat /tmp/self_destruct_response)"
+  ' _ "$deadline" "$id" >> "$SELF_DESTRUCT_LOG" 2>&1 &
+  echo $! > "$SELF_DESTRUCT_PID_FILE"
+
+  echo "Self-destruct armed (${hours}h budget): this instance destroys itself at"
+  echo "  $(date -u -d "@$deadline" '+%Y-%m-%d %H:%M UTC').  Log: $SELF_DESTRUCT_LOG"
+  echo "  Call it off with: kill \$(cat $SELF_DESTRUCT_PID_FILE); rm -f $SELF_DESTRUCT_DEADLINE_FILE"
+}
+arm_self_destruct
 
 # --- 0. Checks -------------------------------------------------------------
 if [ -z "${HF_TOKEN:-}" ]; then
@@ -276,3 +350,7 @@ echo "            (self-signed cert: click through the browser warning, then all
 echo "Logs:       tail -f /workspace/moshi.log"
 echo "Attach:     tmux attach -t moshi"
 echo "Restart:    bash /workspace/run_moshi.sh   (or re-run this script)"
+if [ -s "$SELF_DESTRUCT_DEADLINE_FILE" ]; then
+  echo "Expires:    $(date -u -d "@$(cat "$SELF_DESTRUCT_DEADLINE_FILE")" '+%Y-%m-%d %H:%M UTC')" \
+       "— self-destructs then (log: $SELF_DESTRUCT_LOG)"
+fi
