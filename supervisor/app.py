@@ -10,6 +10,19 @@ _HOP_BY_HOP = {
     "te", "trailers", "transfer-encoding", "upgrade", "content-length", "host",
 }
 
+# A deployment can ship its own prompt (SYSTEM_PROMPT in .env), which the UI
+# offers as the "Customized" preset. Anything this short isn't one: a leftover
+# `SYSTEM_PROMPT=x` in .env should read as "not configured" rather than put a
+# useless preset in front of whoever is running the demo.
+MIN_SYSTEM_PROMPT_CHARS = 8
+
+
+def normalize_system_prompt(value):
+    """The configured prompt, or None if it is absent or too short to be one.
+    The single place that rule lives — the client renders whatever it's given."""
+    text = (value or "").strip()
+    return text if len(text) > MIN_SYSTEM_PROMPT_CHARS else None
+
 
 def _status_payload(registry, child):
     return {
@@ -46,6 +59,13 @@ async def handle_select(request):
         return web.json_response({"state": "ready"}, status=200)
     child.request_switch(repo)
     return web.json_response({"state": "loading"}, status=202)
+
+
+async def handle_system_prompt(request):
+    """The deployment's own prompt, for the UI's "Customized" preset.
+    available:false (with prompt:null) whenever none was configured."""
+    prompt = request.app["_system_prompt"]
+    return web.json_response({"available": prompt is not None, "prompt": prompt})
 
 
 async def handle_teardown_available(request):
@@ -143,14 +163,16 @@ async def _on_cleanup(app):
         await sess.close()
 
 
-def create_app(registry, child, static_dir=None, asr=None):
+def create_app(registry, child, static_dir=None, asr=None, system_prompt=None):
     app = web.Application()
     app["_registry"] = registry
     app["_child"] = child
     app["_asr"] = asr
+    app["_system_prompt"] = normalize_system_prompt(system_prompt)
     app["_static_dir"] = os.path.abspath(static_dir) if static_dir else None
     app.router.add_get("/api/models", handle_models)
     app.router.add_get("/api/status", handle_status)
+    app.router.add_get("/api/system-prompt", handle_system_prompt)
     app.router.add_post("/api/select", handle_select)
     app.router.add_get("/api/teardown/available", handle_teardown_available)
     app.router.add_post("/api/teardown", handle_teardown)

@@ -92,7 +92,10 @@ Pick a voice/role and start talking. It's real-time: just speak and it replies.
   the model (~45 s; you'll see a "Loading…" screen). Original is the best all-round
   model to show; RL Seamless has smoother turn-taking (its license is non-commercial,
   internal/demo use only).
-- **Text Prompt / Voice** — set the persona and voice, then **Connect** and talk.
+- **Text Prompt / Voice** — set the persona and voice, then **Connect** and talk. The
+  example buttons above the box fill it in for you. If `.env` set a `SYSTEM_PROMPT`, it
+  appears first as a highlighted **Customized** button — that's this deployment's own
+  prompt, carried in from your laptop at rental time.
 - **Shut down instance** — button at the bottom, only shown if `VAST_API_KEY` was set.
   Destroys the instance and stops billing. Use this after a demo.
 
@@ -122,6 +125,12 @@ constants at the top of the file — edit them in place and restart:
 `serve.py` launches `asr_server.py` itself, so **`ASR_PORT` in `serve.py` must match
 `PORT` in `asr_server.py`.** Secrets stay out of all of these — they come from the
 environment (on the instance) or `.env` (for `spin_up.py`).
+
+One setting is deliberately not a constant: **`SYSTEM_PROMPT`** lives in `.env` because
+it's per-demo, not per-build. `spin_up.py` forwards it as a container env var,
+`provision.sh` passes it through to `serve.py`, and the UI offers it as the
+**Customized** prompt preset. Anything 8 characters or shorter is treated as unset, so a
+placeholder left in `.env` doesn't put a broken preset in the demo.
 
 ---
 

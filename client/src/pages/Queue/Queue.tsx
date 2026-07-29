@@ -10,6 +10,7 @@ import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 import { useLocalStorage } from "../Conversation/hooks/useLocalStorage";
 import { useModels, ModelInfo, Status } from "./hooks/useModels";
 import { useTeardown } from "./hooks/useTeardown";
+import { useSystemPrompt } from "./hooks/useSystemPrompt";
 
 // Voice presets with human-readable descriptions.
 // "Natural" voices are tuned for warm, conversational delivery; "Variety"
@@ -36,7 +37,12 @@ const VOICE_OPTIONS = [
   { value: "VARM4.pt", label: "Variety Male 5 — expressive, varied" },
 ];
 
-const TEXT_PROMPT_PRESETS = [
+// `custom` marks the one preset that isn't shipped with the app: the prompt
+// this deployment was configured with, which is highlighted rather than buried
+// among the examples.
+type PromptPreset = { label: string; text: string; custom?: boolean };
+
+const TEXT_PROMPT_PRESETS: PromptPreset[] = [
   {
     label: "Assistant (default)",
     text: "You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.",
@@ -60,6 +66,8 @@ interface HomepageProps {
   startConnection: () => Promise<void>;
   textPrompt: string;
   setTextPrompt: (value: string) => void;
+  /** This deployment's own prompt (SYSTEM_PROMPT in .env), or null if unset. */
+  customPrompt: string | null;
   voicePrompt: string;
   setVoicePrompt: (value: string) => void;
   models: ModelInfo[];
@@ -77,6 +85,7 @@ const Homepage = ({
   showMicrophoneAccessMessage,
   textPrompt,
   setTextPrompt,
+  customPrompt,
   voicePrompt,
   setVoicePrompt,
   models,
@@ -88,6 +97,12 @@ const Homepage = ({
   onTeardown,
   teardownError,
 }: HomepageProps) => {
+  // First, so the prompt this deployment was actually set up for is the one
+  // you reach for; the shipped examples keep their order behind it.
+  const presets: PromptPreset[] = customPrompt
+    ? [{ label: "Customized", text: customPrompt, custom: true }, ...TEXT_PROMPT_PRESETS]
+    : TEXT_PROMPT_PRESETS;
+
   return (
     <div className="text-center h-screen w-screen p-4 flex flex-col items-center pt-8">
       <div className="mb-6">
@@ -110,11 +125,17 @@ const Homepage = ({
           <div className="border border-gray-300 rounded p-3 mb-3 bg-gray-50">
             <span className="text-xs font-medium text-gray-500 block mb-2">Examples:</span>
             <div className="flex flex-wrap gap-2 justify-center">
-              {TEXT_PROMPT_PRESETS.map((preset) => (
+              {presets.map((preset) => (
                 <button
                   key={preset.label}
                   onClick={() => setTextPrompt(preset.text)}
-                  className="px-3 py-1 text-xs bg-white hover:bg-gray-100 text-gray-700 rounded-full border border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-[#76b900]"
+                  title={preset.text}
+                  className={
+                    "px-3 py-1 text-xs rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-[#76b900] " +
+                    (preset.custom
+                      ? "bg-[#76b900]/10 hover:bg-[#76b900]/20 text-gray-800 border-[#76b900] font-medium"
+                      : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300")
+                  }
                 >
                   {preset.label}
                 </button>
@@ -209,6 +230,7 @@ export const Queue:FC = () => {
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const { available: teardownAvailable, teardown } = useTeardown();
+  const customPrompt = useSystemPrompt();
   const [destroyed, setDestroyed] = useState(false);
   const [teardownError, setTeardownError] = useState<string | null>(null);
   useEffect(() => {
@@ -401,6 +423,7 @@ export const Queue:FC = () => {
           showMicrophoneAccessMessage={showMicrophoneAccessMessage}
           textPrompt={modelParams.textPrompt}
           setTextPrompt={modelParams.setTextPrompt}
+          customPrompt={customPrompt}
           voicePrompt={modelParams.voicePrompt}
           setVoicePrompt={modelParams.setVoicePrompt}
           models={models}

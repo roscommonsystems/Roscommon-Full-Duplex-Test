@@ -17,7 +17,7 @@ from aiohttp import web
 from supervisor.registry import ModelRegistry
 from supervisor.child import ChildManager
 from supervisor.asr import AsrChild
-from supervisor.app import create_app
+from supervisor.app import create_app, normalize_system_prompt, MIN_SYSTEM_PROMPT_CHARS
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -87,7 +87,22 @@ def main():
     if ENABLE_ASR:
         asr = AsrChild([sys.executable, os.path.join(ROOT, "asr_server.py")], port=ASR_PORT)
 
-    app = create_app(registry, child, static_dir=STATIC_DIR, asr=asr)
+    # Optional deployment prompt, offered in the UI as the "Customized" preset.
+    # It comes from .env via spin_up.py, which forwards it as a container env
+    # var. Both spellings are accepted because Windows upper-cases environment
+    # keys and Linux does not, so a lowercase `system_prompt=` in .env arrives
+    # as SYSTEM_PROMPT from one laptop and system_prompt from another.
+    raw_prompt = os.environ.get("SYSTEM_PROMPT") or os.environ.get("system_prompt")
+    system_prompt = normalize_system_prompt(raw_prompt)
+    if raw_prompt and not system_prompt:
+        print(f"WARNING: SYSTEM_PROMPT is set but is not longer than "
+              f"{MIN_SYSTEM_PROMPT_CHARS} characters — ignoring it.", flush=True)
+    elif system_prompt:
+        print(f'Custom system prompt loaded ({len(system_prompt)} chars) — '
+              f'the UI will offer it as "Customized".', flush=True)
+
+    app = create_app(registry, child, static_dir=STATIC_DIR, asr=asr,
+                     system_prompt=system_prompt)
 
     async def _boot(app):
         # Pre-load the default model before accepting conversations.

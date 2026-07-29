@@ -94,6 +94,13 @@ VAST_API_BASE = "https://console.vast.ai/api"
 # The app repo is public, so nothing is needed to clone it.
 REQUIRED_SECRETS = ("VAST_API_KEY", "HF_TOKEN")
 
+# Forwarded to the container when .env sets it, never required: the server
+# offers it in the UI as the "Customized" prompt preset. Both spellings are
+# read because Windows upper-cases environment keys and Linux does not, so a
+# lowercase `system_prompt=` in .env survives either laptop. It always arrives
+# on the instance as SYSTEM_PROMPT.
+SYSTEM_PROMPT_KEYS = ("SYSTEM_PROMPT", "system_prompt")
+
 
 def load_dotenv(path):
     """Read KEY=value lines from .env into the environment. Real environment
@@ -113,6 +120,15 @@ def load_dotenv(path):
             value = value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
+
+
+def system_prompt():
+    """The prompt from .env under either spelling, stripped, or None."""
+    for key in SYSTEM_PROMPT_KEYS:
+        value = (os.environ.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 def api(method, path, body=None, fatal=True):
@@ -206,6 +222,9 @@ def rent(offer_id, onstart):
     # which is also what it means when you paste provision.sh in by hand.
     if MAX_RUNTIME_HOURS:
         env["MAX_RUNTIME_HOURS"] = str(MAX_RUNTIME_HOURS)
+    prompt = system_prompt()
+    if prompt:
+        env["SYSTEM_PROMPT"] = prompt
     body = {
         "image": IMAGE,
         "disk": DISK_GB,
@@ -381,6 +400,18 @@ def main():
     if missing:
         sys.exit("ERROR: missing " + ", ".join(missing) + ".\n"
                  "Copy .env.example to .env and fill it in (see README.md step 1).")
+
+    # Said out loud before the money is spent: a prompt that silently didn't
+    # make it is only discovered once the demo is up and the preset is missing.
+    # 8 is the server's own threshold (MIN_SYSTEM_PROMPT_CHARS in
+    # supervisor/app.py); this script stays stdlib-only, so it can't import it.
+    prompt = system_prompt()
+    if prompt and len(prompt) > 8:
+        print(f'Forwarding SYSTEM_PROMPT from .env ({len(prompt)} chars) — '
+              'the UI will offer it as "Customized".')
+    elif prompt:
+        print(f'WARNING: SYSTEM_PROMPT in .env is only {len(prompt)} characters. '
+              'The server ignores anything that short — no "Customized" preset.')
 
     onstart_path = os.path.join(ROOT, "provision.sh")
     if not os.path.isfile(onstart_path):

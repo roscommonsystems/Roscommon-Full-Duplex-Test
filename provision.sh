@@ -18,6 +18,9 @@
 #   (optional) To cap what the rental can cost you, set VAST_API_KEY as above and:
 #        MAX_RUNTIME_HOURS=24      (the instance destroys itself 24h after boot)
 #
+#   (optional) To ship a prompt of your own, offered in the UI as "Customized":
+#        SYSTEM_PROMPT="You work for ..."   (ignored if <= 8 characters)
+#
 # HOW THIS RUNS:
 #
 #   Normally you never invoke this yourself — spin_up.py passes it to vast.ai
@@ -306,6 +309,10 @@ export HF_HUB_ENABLE_HF_TRANSFER=1
 export VAST_API_KEY=${VAST_API_KEY:-}
 export CONTAINER_ID=${CONTAINER_ID:-}
 export VAST_CONTAINERLABEL=${VAST_CONTAINERLABEL:-}
+# The deployment's own prompt, offered in the UI as "Customized". Quoted with
+# %q, unlike the tokens above, because it is free text: spaces and apostrophes
+# are the normal case here and would otherwise break this generated script.
+export SYSTEM_PROMPT=$(printf '%q' "${SYSTEM_PROMPT:-}")
 # serve.py launches asr_server.py itself; both are configured by the constants
 # at the top of those files (ENABLE_ASR / ASR_PORT and PORT / MODEL).
 # Let CTranslate2 (faster-whisper) find the pip-installed CUDA libs for GPU.
