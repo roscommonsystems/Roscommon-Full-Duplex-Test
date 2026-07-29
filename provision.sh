@@ -42,7 +42,45 @@ APP_REPO="${APP_REPO:-github.com/roscommonsystems/Roscommon-Full-Duplex-Test}"
 VENV="${VENV:-/venv/main}"
 export HF_HOME="${HF_HOME:-/workspace/.hf_home}"
 
-log(){ echo -e "\n=== $* ==="; }
+# --- Step timing -----------------------------------------------------------
+# Every banner is also a stopwatch split: log() closes out the previous step
+# and records how long it took, so timing_report() at the end says where the
+# boot actually went. Bash's $SECONDS counts from script start, so this costs
+# no `date` calls and no subshells.
+#
+# What this canNOT see is the docker image pull — that finishes before this
+# script is even handed to the container. spin_up.py times that half (rented
+# -> running) and prints both together.
+STEP_START=$SECONDS
+STEP_NAME=""
+TIMINGS=()
+
+# Close the running step, if any, and start one named $1. An empty $1 just
+# closes the last step (what timing_report does before printing).
+record_step(){
+  if [ -n "$STEP_NAME" ]; then
+    TIMINGS+=("$((SECONDS - STEP_START))|$STEP_NAME")
+  fi
+  STEP_START=$SECONDS
+  STEP_NAME="${1:-}"
+}
+
+log(){
+  record_step "$*"
+  printf '\n=== [%dm%02ds] %s ===\n' "$((SECONDS / 60))" "$((SECONDS % 60))" "$*"
+}
+
+timing_report(){
+  record_step ""
+  echo
+  printf '=== Where the time went (total %dm%02ds) ===\n' \
+    "$((SECONDS / 60))" "$((SECONDS % 60))"
+  echo "    (excludes the image pull, which happens before this script runs)"
+  local entry
+  for entry in ${TIMINGS[@]+"${TIMINGS[@]}"}; do
+    printf '  %4ds  %s\n' "${entry%%|*}" "${entry#*|}"
+  done
+}
 
 # --- 0. Checks -------------------------------------------------------------
 if [ -z "${HF_TOKEN:-}" ]; then
@@ -219,6 +257,10 @@ for _ in $(seq 1 90); do
   fi
   sleep 10
 done
+
+# Kept on disk as well as printed: vast's on-start output scrolls past in the
+# console, and this is the one artefact worth reading again after the fact.
+timing_report | tee /workspace/boot_timing.log
 
 # --- Report ----------------------------------------------------------------
 PUB_IP="${PUBLIC_IPADDR:-$(curl -s -m 10 https://api.ipify.org || echo UNKNOWN)}"

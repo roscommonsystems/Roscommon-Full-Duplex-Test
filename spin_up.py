@@ -263,10 +263,15 @@ class HostStartupError(RuntimeError):
     side can recover from it, and waiting out the timeout only bills for it."""
 
 
+def _dur(seconds):
+    """m:ss for a duration."""
+    s = int(seconds)
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def _elapsed(since):
     """m:ss since `since`, for prefixing progress lines."""
-    s = int(time.time() - since)
-    return f"{s // 60}:{s % 60:02d}"
+    return _dur(time.time() - since)
 
 
 def wait_for_running(instance_id):
@@ -396,6 +401,10 @@ def main():
                  "market is moving fast right now. Re-run in a minute, or raise "
                  "MAX_DOLLARS_PER_HOUR to bid on less contested offers.")
     print(f"Rented — instance {instance_id} is billing from now on.")
+    # Boot splits into two halves and only this side can see the first one:
+    # everything up to "running" is the host pulling the image, and provision.sh
+    # does not exist yet to time it. The second half it times itself, per step.
+    rented_at = time.time()
 
     # From here on the instance is billing, so every exit goes through
     # on_failure() rather than just printing and leaving it running.
@@ -406,12 +415,14 @@ def main():
             return on_failure(instance_id, f"Container was not running after "
                                            f"{RUNNING_TIMEOUT_MIN} min.")
         ip, port = running
+        running_at = time.time()
         url = f"https://{ip}:{port}"
 
         print(f"\nContainer up at {url}. Provisioning + first model download take "
               f"a while (up to {READY_TIMEOUT_MIN} min) — the port stays closed "
               "until the model has loaded.")
         status = wait_for_model(url)
+        ready_at = time.time()
     except KeyboardInterrupt:
         return on_failure(instance_id, "Interrupted — but the instance is rented "
                                        "and billing.")
@@ -433,6 +444,10 @@ def main():
                                        f"{status.get('error') or status.get('state')}")
 
     print(f"\nUP — {status.get('display_name')} is loaded.")
+    print(f"\n  Boot:     {_dur(ready_at - rented_at)} total — "
+          f"{_dur(running_at - rented_at)} image pull, "
+          f"{_dur(ready_at - running_at)} provisioning")
+    print("            (per-step breakdown: /workspace/boot_timing.log on the instance)")
     print(f"\n  Web UI:   {url}")
     print("            (self-signed cert: click through the warning, then allow mic)")
     print(f"  Instance: {instance_id}")
