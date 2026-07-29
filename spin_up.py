@@ -14,6 +14,8 @@ below, edited in place.
 
     python spin_up.py
 """
+import base64
+import gzip
 import json
 import os
 import ssl
@@ -89,6 +91,20 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # we call is still v0.
 VAST_API_BASE = "https://console.vast.ai/api"
 
+# vast's limits on the rental body. It enforces all three in one check and
+# refuses with a 400 that names them together — "len(image) > 1024, or
+# len(args) > 16384, or len(label) > 256" — without saying which one you tripped,
+# and only *after* the search has run. check_limits() gets there first.
+# ("args" is the on-start script.)
+VAST_MAX_IMAGE_CHARS = 1024
+VAST_MAX_ONSTART_CHARS = 16384
+VAST_MAX_LABEL_CHARS = 256
+
+# Where the on-start wrapper unpacks provision.sh on the instance. /workspace is
+# the persistent volume, alongside the logs provision.sh writes.
+ONSTART_DIR = "/workspace"
+ONSTART_PATH = f"{ONSTART_DIR}/provision.sh"
+
 # Passed into the container. VAST_API_KEY is what rents the instance in the
 # first place, and rides along so the in-UI "Shut down instance" button works.
 # The app repo is public, so nothing is needed to clone it.
@@ -129,6 +145,64 @@ def system_prompt():
         if value:
             return value
     return None
+
+
+def pack_onstart(script):
+    """provision.sh wrapped as a self-extracting on-start script.
+
+    provision.sh outgrew vast's 16KB on-start limit in July 2026, and trimming
+    it back under would only buy until the next paragraph of comments — it is a
+    documented script and meant to stay one. So we don't send it as text: it
+    goes gzipped, inside five lines of bash that unpack it on the host. Shell
+    compresses about 4:1, which turns the cap from something a comment can walk
+    into back into something you'd have to double the file to reach.
+
+    The instance runs the byte-for-byte contents of your local provision.sh —
+    including uncommitted edits, unlike fetching it from the repo — and the
+    unpacked copy stays at ONSTART_PATH to read or re-run over ssh. base64 and
+    gunzip are the only things this needs on the host; both are in the image.
+    """
+    # mtime=0 so an unchanged provision.sh packs to an identical payload rather
+    # than a fresh one every run — the difference is then real, not a timestamp.
+    blob = base64.encodebytes(gzip.compress(script.encode("utf-8"), 9, mtime=0))
+    return (
+        "#!/bin/bash\n"
+        "# provision.sh, gzipped by spin_up.py to fit vast's on-start size cap.\n"
+        f"# It unpacks below to {ONSTART_PATH} — read it, or re-run it, there.\n"
+        "set -eo pipefail\n"
+        f"mkdir -p {ONSTART_DIR}\n"
+        # Quoted heredoc: no expansion, so the payload can't be mangled by the
+        # shell. base64's alphabet cannot produce the terminator line.
+        f"base64 -d <<'PROVISION_SH_B64' | gunzip > {ONSTART_PATH}\n"
+        f"{blob.decode('ascii')}"
+        "PROVISION_SH_B64\n"
+        f"exec bash {ONSTART_PATH}\n"
+    )
+
+
+def check_limits(onstart, script):
+    """Fail on anything vast would refuse the rental for, before we search.
+
+    Everything here is a constant at the top of this file (or a file it reads),
+    so it is ours to get wrong — and getting it wrong the other way costs a
+    round trip through the search and a 400 that doesn't say which limit it was.
+    """
+    packed_note = (
+        f"provision.sh is {len(script)} chars and packs to {len(onstart)}.\n"
+        "  Nothing in this script can shrink that further — trim provision.sh, "
+        "or host it\n  and fetch it from a one-line on-start script instead."
+    )
+    for what, value, limit, fix in (
+        ("IMAGE", IMAGE, VAST_MAX_IMAGE_CHARS,
+         "Copy a shorter image name from the console's image picker."),
+        ("LABEL", LABEL, VAST_MAX_LABEL_CHARS,
+         "Shorten LABEL at the top of this file."),
+        ("the packed on-start script", onstart, VAST_MAX_ONSTART_CHARS,
+         packed_note),
+    ):
+        if len(value) > limit:
+            sys.exit(f"ERROR: {what} is {len(value)} characters; vast allows "
+                     f"{limit}.\n  {fix}")
 
 
 def api(method, path, body=None, fatal=True):
@@ -420,7 +494,11 @@ def main():
     with open(onstart_path, encoding="utf-8") as fh:
         # CRLF would break bash on the host; .gitattributes should prevent it,
         # but a stray checkout setting shouldn't cost you a rental.
-        onstart = fh.read().replace("\r\n", "\n")
+        script = fh.read().replace("\r\n", "\n")
+    onstart = pack_onstart(script)
+    check_limits(onstart, script)
+    print(f"On-start script: provision.sh, {len(script)} chars packed to "
+          f"{len(onstart)} (vast allows {VAST_MAX_ONSTART_CHARS}).")
 
     print(f"Searching for {GPU_NAME or 'any GPU'} offers "
           f"(<= ${MAX_DOLLARS_PER_HOUR}/hr, {'datacenter only' if DATACENTER_ONLY else 'any host'})...")
